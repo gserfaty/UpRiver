@@ -30,20 +30,16 @@ function dur(a, b) {
   return sec >= 60 ? Math.floor(sec / 60) + "m " + (sec % 60) + "s" : sec + "s";
 }
 
-// ---- pollers: everything started by a page is stopped on navigation ----
-let gen = 0; // bumped on each navigation; stale async work checks it
-const timers = [];
-function poll(fn, ms) { // calls fn() every ms until navigation; fn returns false to stop
-  const my = gen;
+// ---- pollers: each route renders into a fresh node, so a poller stops once its node leaves the document ----
+function poll(node, fn, ms) { // calls fn() every ms while node is on the page; fn returns false to stop
   const tick = async () => {
-    if (my !== gen) return;
+    if (!node.isConnected) return;
     let more = true;
     try { more = await fn(); } catch (e) { /* transient; keep polling */ }
-    if (my === gen && more !== false) timers.push(setTimeout(tick, ms));
+    if (more !== false) setTimeout(tick, ms);
   };
-  timers.push(setTimeout(tick, ms));
+  setTimeout(tick, ms);
 }
-function stopPollers() { gen++; timers.splice(0).forEach(clearTimeout); }
 
 // ---- api ----
 async function api(method, path, opts = {}) {
@@ -78,7 +74,7 @@ function action(box, fn) {
     btn.disabled = true;
     box.textContent = "";
     box.className = "";
-    try { await fn(); } catch (e) { box.className = "err"; box.textContent = e.message; }
+    try { await fn(btn); } catch (e) { box.className = "err"; box.textContent = e.message; }
     btn.disabled = false;
   };
 }
@@ -89,24 +85,24 @@ function renderBar() {
   const bar = $("bar");
   bar.replaceChildren();
   const f = {
-    user: el("input", { placeholder: "your name", value: auth.user, maxLength: 64 }),
-    token: el("input", { placeholder: "team token", type: "password", value: auth.token }),
-    admin: el("input", { placeholder: "admin token (optional)", type: "password", value: auth.admin }),
+    user: el("input", { placeholder: "your name", "aria-label": "your name", autocomplete: "username", value: auth.user, maxLength: 64 }),
+    token: el("input", { placeholder: "team token", "aria-label": "team token", type: "password", autocomplete: "off", value: auth.token }),
+    admin: el("input", { placeholder: "admin token (optional)", "aria-label": "admin token (optional)", type: "password", autocomplete: "off", value: auth.admin }),
   };
-  const save = el("button", { onclick: () => {
-    auth.user = f.user.value.trim(); auth.token = f.token.value; auth.admin = f.admin.value;
-    store.set("upriver.user", auth.user); store.set("upriver.token", auth.token); store.set("upriver.admin", auth.admin);
-    route();
-  } }, "Save");
+  // a form, so Enter in any field saves
   bar.append(el("h1", {}, el("a", { href: "#/", style: "text-decoration:none;color:inherit" }, "UpRiver")),
-    f.user, f.token, f.admin, save);
+    el("form", { class: "row", onsubmit: (ev) => {
+      ev.preventDefault();
+      auth.user = f.user.value.trim(); auth.token = f.token.value; auth.admin = f.admin.value;
+      store.set("upriver.user", auth.user); store.set("upriver.token", auth.token); store.set("upriver.admin", auth.admin);
+      route();
+    } }, f.user, f.token, f.admin, el("button", {}, "Save")));
 }
 
 // ---- router ----
 function route() {
-  stopPollers();
-  const view = $("view");
-  view.replaceChildren();
+  const view = el("div"); // fresh per navigation: a slow page from the previous route renders into a detached node
+  $("view").replaceChildren(view);
   if (!auth.user || !auth.token) {
     view.append(el("p", {}, "Enter your name and the team token above to continue."));
     return;
@@ -145,7 +141,7 @@ async function listPage(view) {
   if (!list.length) view.append(el("p", { class: "muted" }, "No pipelines yet."));
 
   const box = el("div");
-  const ta = el("textarea", { value: JSON.stringify(NEW_PIPELINE, null, 2), spellcheck: false });
+  const ta = el("textarea", { value: JSON.stringify(NEW_PIPELINE, null, 2), spellcheck: false, "aria-label": "new pipeline JSON" });
   view.append(el("h2", {}, "New pipeline (admin)"), ta,
     el("div", { class: "row" }, el("button", { onclick: action(box, async () => {
       const p = await api("POST", "/pipelines", { json: JSON.parse(ta.value), admin: true });
@@ -172,7 +168,11 @@ async function pipelinePage(view, pid) {
         el("td", {}, f.uploader + ", " + when(f.created_at)),
         el("td", {},
           el("button", { onclick: action(filesErr, () => download(`/uploads/${f.id}/download`, f.path.split("/").pop())) }, "Download"), " ",
-          el("button", { onclick: async () => { hist.hidden = !hist.hidden; if (!hist.hidden) await loadHistory(f.path, hist.firstChild); } }, "History"), " ",
+          el("button", { "aria-expanded": "false", onclick: action(filesErr, async (btn) => {
+            hist.hidden = !hist.hidden;
+            btn.setAttribute("aria-expanded", String(!hist.hidden));
+            if (!hist.hidden) await loadHistory(f.path, hist.firstChild);
+          }) }, "History"), " ",
           el("button", { class: "danger", onclick: action(filesErr, async () => {
             await api("DELETE", `/pipelines/${pid}/files?path=${encodeURIComponent(f.path)}`);
             pins.delete(f.path);
@@ -186,7 +186,7 @@ async function pipelinePage(view, pid) {
   async function loadHistory(path, cell) {
     const rows = await api("GET", `/pipelines/${pid}/uploads?path=${encodeURIComponent(path)}`);
     cell.replaceChildren(...rows.map((u) => el("div", { class: "row" },
-      u.sha256 ? el("input", { type: "checkbox", checked: pins.get(path) === u.id, title: "pin this version for Build now",
+      u.sha256 ? el("input", { type: "checkbox", checked: pins.get(path) === u.id, title: "pin this version for Build now", "aria-label": `pin v${u.version}`,
         onchange: (ev) => {
           if (ev.target.checked) pins.set(path, u.id); else pins.delete(path);
           cell.querySelectorAll("input").forEach((i) => { if (i !== ev.target) i.checked = false; });
@@ -195,7 +195,7 @@ async function pipelinePage(view, pid) {
       "v" + u.version + (u.sha256 ? " " + fmtSize(u.size) : " removed"), " by " + u.uploader + ", " + when(u.created_at),
       u.sha256 ? el("button", { onclick: action(filesErr, () => download(`/uploads/${u.id}/download`, path.split("/").pop())) }, "Download") : null)));
   }
-  const fileIn = el("input", { type: "file", multiple: true });
+  const fileIn = el("input", { type: "file", multiple: true, "aria-label": "files to upload" });
   const extract = el("input", { type: "checkbox" });
   view.append(el("h2", {}, "Files"), filesBox,
     el("div", { class: "row" }, fileIn, el("label", {}, extract, " extract zips"),
@@ -215,7 +215,7 @@ async function pipelinePage(view, pid) {
   const runErr = el("div"), pinInfo = el("span", { class: "muted" });
   const updatePins = () => { pinInfo.textContent = pins.size ? `${pins.size} pinned version(s)` : ""; };
   const cfgSel = el("select");
-  const paramBox = el("div"), stageBox = el("div"), cfgName = el("input", { placeholder: "config name", maxLength: 64 });
+  const paramBox = el("div"), stageBox = el("div"), cfgName = el("input", { placeholder: "config name", "aria-label": "config name", maxLength: 64 });
   const paramIn = {};
   for (const p of pipe.config.params) {
     paramIn[p.name] = p.choices
@@ -284,7 +284,7 @@ async function pipelinePage(view, pid) {
 
   // Settings
   const setErr = el("div");
-  const ta = el("textarea", { value: JSON.stringify({ description: pipe.description, config: pipe.config }, null, 2), spellcheck: false });
+  const ta = el("textarea", { value: JSON.stringify({ description: pipe.description, config: pipe.config }, null, 2), spellcheck: false, "aria-label": "pipeline settings JSON" });
   view.append(el("h2", {}, "Settings (admin)"), ta,
     el("div", { class: "row" }, el("button", { onclick: action(setErr, async () => {
       await api("PUT", "/pipelines/" + pid, { json: JSON.parse(ta.value), admin: true });
@@ -297,7 +297,7 @@ async function buildPage(view, bid) {
   const head = el("div"), stagesBox = el("div"), logHead = el("h2", {}, "Log"), logPre = el("pre", { class: "log", hidden: true });
   const artBox = el("div"), err = el("div");
   view.append(head, err, el("h2", {}, "Stages"), stagesBox, logHead, logPre, el("h2", {}, "Artifacts"), artBox);
-  let selected = null, logGen = 0, artifactsShown = false;
+  let selected = null, picked = false, logGen = 0, artifactsShown = false, pipe;
 
   function selectStage(seq) { // restart log polling for this stage; offset polling until complete
     selected = seq;
@@ -319,13 +319,14 @@ async function buildPage(view, bid) {
       return !r.complete;
     };
     // first read immediately, then poll every 1.5 s until complete
-    pull().then((more) => { if (more) poll(pull, 1500); }).catch((e) => { err.className = "err"; err.textContent = e.message; });
+    pull().then((more) => { if (more) poll(logPre, pull, 1500); }).catch((e) => { err.className = "err"; err.textContent = e.message; });
     renderStages();
   }
 
   let build;
   function renderStages() {
-    stagesBox.replaceChildren(...build.stage_runs.map((s) => el("div", { class: "stage" + (s.seq === selected ? " sel" : ""), onclick: () => s.seq !== selected && selectStage(s.seq) },
+    stagesBox.replaceChildren(...build.stage_runs.map((s) => el("button", { type: "button", class: "stage" + (s.seq === selected ? " sel" : ""),
+      "aria-pressed": String(s.seq === selected), onclick: () => { picked = true; if (s.seq !== selected) selectStage(s.seq); } },
       el("strong", {}, s.name), el("span", { class: "muted" }, s.kind), badge(s.status),
       el("span", { class: "muted" }, dur(s.started_at, s.finished_at)), s.exit_code != null ? el("span", { class: "muted" }, "exit " + s.exit_code) : null)));
     if (!build.stage_runs.length) stagesBox.append(el("p", { class: "muted" }, "No stages started yet."));
@@ -333,7 +334,7 @@ async function buildPage(view, bid) {
   const active = () => build.status === "queued" || build.status === "running";
   async function load() {
     build = await api("GET", "/builds/" + bid);
-    const pipe = await api("GET", "/pipelines/" + build.pipeline_id);
+    pipe = pipe || await api("GET", "/pipelines/" + build.pipeline_id);
     head.replaceChildren(
       el("p", {}, el("a", { href: "#/" }, "Pipelines"), " / ", el("a", { href: "#/p/" + pipe.id }, pipe.name), " / ", el("strong", {}, "#" + build.number)),
       el("div", { class: "row" }, badge(build.status), el("span", {}, "by " + build.triggered_by),
@@ -342,10 +343,11 @@ async function buildPage(view, bid) {
         active() ? el("button", { class: "danger", onclick: action(err, async () => { await api("POST", `/builds/${bid}/abort`); await refresh(); }) }, "Abort") : null),
       el("div", { class: "muted" }, Object.entries(build.params).map(([k, v]) => k + "=" + v).join("  ")),
       el("div", { class: "muted" }, build.files.length + " file(s): " + build.files.map((f) => f.path + "@v" + f.version).join(", ")));
-    if (selected == null && build.stage_runs.length) {
-      const run = build.stage_runs.find((s) => s.status === "running") || build.stage_runs.find((s) => s.status === "failed") || build.stage_runs[0];
-      selectStage(run.seq);
-    } else renderStages();
+    // follow the running (then failed) stage until the user picks one
+    const runs = build.stage_runs;
+    const want = picked ? null : (runs.find((s) => s.status === "running") || runs.find((s) => s.status === "failed") || (selected == null ? runs[0] : null));
+    if (want && want.seq !== selected) selectStage(want.seq);
+    else renderStages();
     if (!active() && !artifactsShown) { artifactsShown = true; await loadArtifacts(); }
   }
   async function refresh() { try { await load(); } catch (e) { err.className = "err"; err.textContent = e.message; } }
@@ -356,7 +358,7 @@ async function buildPage(view, bid) {
       : [el("p", { class: "muted" }, "No artifacts.")]));
   }
   await load();
-  if (active()) poll(async () => { await load(); return active(); }, 2000);
+  if (active()) poll(view, async () => { await load(); return active(); }, 2000);
 }
 
 renderBar();

@@ -1,5 +1,11 @@
 # Changelog
 
+## Phase 4 review fixes
+- Navigation: each route now renders into a fresh container and pollers stop when their node leaves the page. Before, a slow page from the previous route appended into the new one (list content showed up under a build), and a build poller started after a quick navigation-away kept polling forever.
+- Build page: the log follows the running stage, then the failed one, until the user picks a stage (it used to stay on the stage that was running when the page opened). Pipeline is fetched once, not on every 2 s poll.
+- Accessibility: stages are buttons (`aria-pressed`), inputs/textareas/pin checkboxes have labels, History has `aria-expanded`, the sign-in bar is a form (Enter saves). History errors show inline instead of an unhandled rejection.
+- Dark mode: `color-scheme` set so native controls match; badges use dark text on the light dark-mode colors (white on light green was unreadable).
+
 ## Phase 4: web UI
 - `static/index.html` + `static/app.js`: vanilla JS, no build step, hash routed (`#/` pipelines, `#/p/{id}` pipeline, `#/b/{id}` build). Sign-in bar (name, team token, optional admin token) kept in localStorage; every request sends the bearer token and `X-UpRiver-User`; API errors (401/403/413/...) show inline.
 - Files (upload with "extract zips", version history with pin checkbox, remove), Run (config, params, stages, Build now with pinned versions, Save as config), Builds history, admin Settings JSON editor; build page with abort, stage statuses, live log (1.5 s offset polling), build polled every 2 s while active, artifact downloads.

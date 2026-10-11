@@ -5,16 +5,17 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>UpRiver</title>
 <style>
+:root { color-scheme: light dark; }
 :root {
   --bg: #fff; --fg: #1d2330; --muted: #6b7280; --line: #d9dde5; --panel: #f5f6f9;
   --accent: #2563eb; --passed: #15803d; --failed: #b91c1c; --running: #2563eb;
-  --queued: #6b7280; --aborted: #c2610c; --skipped: #9ca3af; --pending: #9ca3af;
+  --queued: #6b7280; --aborted: #c2610c; --skipped: #9ca3af; --pending: #9ca3af; --badge-fg: #fff;
 }
 @media (prefers-color-scheme: dark) {
   :root {
     --bg: #14171f; --fg: #e5e7eb; --muted: #9aa3b2; --line: #2e3442; --panel: #1c202b;
     --accent: #6ea0ff; --passed: #4ade80; --failed: #f87171; --running: #6ea0ff;
-    --queued: #9aa3b2; --aborted: #fb923c; --skipped: #6b7280; --pending: #6b7280;
+    --queued: #9aa3b2; --aborted: #fb923c; --skipped: #9ca3af; --pending: #9ca3af; --badge-fg: #0d1117;
   }
 }
 * { box-sizing: border-box; }
@@ -26,6 +27,7 @@ h2 { font-size: 1.05rem; margin: 1.4rem 0 .5rem; }
 #bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 8px 12px;
   background: var(--panel); border-bottom: 1px solid var(--line); }
 #bar input { width: 9rem; }
+#bar .row { margin: 0; }
 input, select, textarea, button { font: inherit; color: inherit; background: var(--bg);
   border: 1px solid var(--line); border-radius: 4px; padding: 4px 8px; max-width: 100%; }
 button { cursor: pointer; background: var(--panel); }
@@ -40,13 +42,13 @@ th { color: var(--muted); font-weight: 600; font-size: .85rem; }
 .muted { color: var(--muted); }
 .err { color: var(--failed); white-space: pre-wrap; margin: 6px 0; }
 .ok { color: var(--passed); margin: 6px 0; }
-.badge { display: inline-block; padding: 0 8px; border-radius: 10px; font-size: .8rem; color: #fff;
+.badge { display: inline-block; padding: 0 8px; border-radius: 10px; font-size: .8rem; color: var(--badge-fg);
   background: var(--queued); }
 .badge.passed { background: var(--passed); } .badge.failed { background: var(--failed); }
 .badge.running { background: var(--running); } .badge.aborted { background: var(--aborted); }
 .badge.skipped, .badge.pending { background: var(--skipped); }
 .badge.queued { background: var(--queued); }
-.stage { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 6px 8px;
+.stage { display: flex; width: 100%; text-align: left; background: var(--bg); flex-wrap: wrap; gap: 8px; align-items: center; padding: 6px 8px;
   border: 1px solid var(--line); border-radius: 4px; margin: 4px 0; cursor: pointer; }
 .stage.sel { border-color: var(--accent); background: var(--panel); }
 pre.log { background: #0d1117; color: #d6dae0; padding: 8px; border-radius: 4px; overflow: auto;
