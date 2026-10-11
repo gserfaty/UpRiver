@@ -38,7 +38,7 @@ app = FastAPI(lifespan=lifespan)
 # ---- auth ----
 def _token(request: Request, authorization: str | None):
     scheme, _, tok = (authorization or "").partition(" ")
-    if scheme != "Bearer" or not tok:
+    if scheme.lower() != "bearer" or not tok:  # RFC 7235: scheme is case-insensitive
         raise HTTPException(401, "missing bearer token")
     s = request.app.state
     # evaluate both so timing doesn't reveal which matched

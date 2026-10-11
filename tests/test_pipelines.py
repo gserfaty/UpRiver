@@ -14,6 +14,7 @@ def test_auth_required(client, team, admin):
     assert client.get("/api/pipelines", headers={"Authorization": "Bearer nope"}).status_code == 401
     assert client.get("/api/pipelines", headers=team).status_code == 200
     assert client.get("/api/pipelines", headers=admin).status_code == 200
+    assert client.get("/api/pipelines", headers={"Authorization": "bearer t"}).status_code == 200
     assert client.post("/api/pipelines", json=pipe()).status_code == 401
     assert client.post("/api/pipelines", json=pipe(), headers=team).status_code == 403
     assert client.put("/api/pipelines/1", json=pipe(), headers=team).status_code == 403
