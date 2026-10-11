@@ -2,7 +2,7 @@
 
 Custom CI/CD pipeline framework (Jenkins-inspired): upload files, build, run BVT/FVT test suites with user-defined configurations.
 
-Status: phase 1 (skeleton, auth, pipelines, run configs, demo seed). See `docs/plan.md` for the roadmap and `CHANGELOG.md` for progress.
+Status: phase 3 (uploads, builds and runner; the UI is still a placeholder). See `docs/plan.md` for the roadmap and `CHANGELOG.md` for progress.
 
 ## Setup and run
 
@@ -24,6 +24,26 @@ API docs at http://127.0.0.1:8080/docs. Every `/api` call needs `Authorization: 
 | UPRIVER_MAX_UPLOAD_MB | 200 | per-file and per-zip-uncompressed cap |
 
 On first start a `demo` pipeline (bvt, fvt; run configs `quick`, `full`) is seeded from `samples/demo.json`.
+
+## Plugging in stages and tests
+
+A pipeline's `config.stages` is an ordered list of `{name, kind, command, timeout_s, on_fail}`. Each build copies the pipeline's current file set (or pinned versions) into a fresh workspace, then runs every selected stage as `/bin/sh -c "<command>"` with the workspace as the working directory. Exit 0 passes; anything else fails. `on_fail: stop` skips the remaining stages, `continue` runs them (the build still ends `failed`). A stage over `timeout_s` is killed (SIGTERM, then SIGKILL after 5 s) and fails.
+
+Uploaded files are not executable; call them through an interpreter, e.g. `sh tests/run.sh` or `python3 -m pytest tests`. `$UPRIVER_ROOT/...` reaches the scripts shipped in `samples/`.
+
+The command sees only this environment (nothing from the server's own env):
+
+| var | value |
+|---|---|
+| PATH, HOME, LANG | inherited from the server |
+| UPRIVER_ROOT | UpRiver checkout directory |
+| UPRIVER_PIPELINE, UPRIVER_STAGE | pipeline and stage names |
+| UPRIVER_BUILD_ID, UPRIVER_BUILD_NUMBER | global build id, per-pipeline number |
+| UPRIVER_WORKSPACE | the working directory |
+| ARTIFACTS_DIR | write results here; listed and downloadable via `/api/builds/{id}/artifacts` |
+| UPRIVER_PARAM_<NAME> | one per declared build parameter (values are never interpolated into the command) |
+
+stdout and stderr go to one log per stage, readable while it runs with `GET /api/builds/{id}/stages/{seq}/log?offset=N`. Trigger with `POST /api/pipelines/{id}/builds` (body optional: `config_id`, `params`, `stages`, `upload_ids` to pin file versions); abort with `POST /api/builds/{id}/abort`. A pipeline with `auto_build: true` builds once per upload request that changed something.
 
 ## Security
 

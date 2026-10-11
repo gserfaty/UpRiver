@@ -13,17 +13,18 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Literal
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Request
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, field_validator, model_validator
 from starlette.concurrency import run_in_threadpool
 from starlette.datastructures import UploadFile
 
-from . import db
+from . import db, runner
 
 NAME_RE = r"^[A-Za-z0-9_.-]{1,64}$"
 MAX_ZIP_MEMBERS = 10_000
+LOG_CHUNK = 64 * 1024
 
 
 @asynccontextmanager
@@ -39,7 +40,11 @@ async def lifespan(app):
     app.state.max_upload = int(os.environ.get("UPRIVER_MAX_UPLOAD_MB", "200")) * 1024 * 1024
     app.state.db = str(data / "upriver.db")
     db.init(app.state.db)
-    yield
+    runner.start(app.state.db, data, app.state.executors)
+    try:
+        yield
+    finally:
+        runner.shutdown()
 
 
 app = FastAPI(lifespan=lifespan)
@@ -130,6 +135,13 @@ class PipelineUpdate(BaseModel):
     config: PipelineConfig
 
 
+class BuildIn(BaseModel):
+    config_id: int | None = None
+    params: dict[str, str] = {}
+    stages: list[str] | None = None
+    upload_ids: list[int] = []
+
+
 class RunConfigIn(BaseModel):
     name: str = Field(pattern=NAME_RE)
     params: dict[str, str] = {}
@@ -146,6 +158,15 @@ def get_pipeline(c, pid):
     if r is None:
         raise HTTPException(404, "pipeline not found")
     return r
+
+
+def check_params(cfg, params):
+    decl = {p.name: p for p in cfg.params}
+    for k, v in params.items():
+        if k not in decl:
+            raise HTTPException(400, f"unknown param {k}")
+        if len(v) > 1024 or (decl[k].choices is not None and v not in decl[k].choices):
+            raise HTTPException(400, f"invalid value for param {k}")
 
 
 def rc_out(r):
@@ -187,6 +208,13 @@ def current_files(c, pid):
         "WHERE pipeline_id=? AND sha256 IS NOT NULL "
         "AND version=(SELECT MAX(version) FROM upload WHERE pipeline_id=u.pipeline_id AND path=u.path) "
         "ORDER BY path", (pid,)).fetchall()
+
+
+def check_clash(paths):
+    """A file and a directory can't share a name in the build workspace ("a" vs "a/b")."""
+    dirs = {p.rsplit("/", k)[0] for p in paths for k in range(1, p.count("/") + 1)}
+    if clash := paths & dirs:
+        raise HTTPException(400, f"file and directory share a path: {min(clash)[:80]!r}")
 
 
 # ---- routes ----
@@ -238,12 +266,7 @@ def list_configs(pid: int, request: Request):
 def upsert_config(pid: int, body: RunConfigIn, request: Request, who: str = Depends(user)):
     with conn(request) as c:
         cfg = PipelineConfig(**json.loads(get_pipeline(c, pid)["config"]))
-        decl = {p.name: p for p in cfg.params}
-        for k, v in body.params.items():
-            if k not in decl:
-                raise HTTPException(400, f"unknown param {k}")
-            if len(v) > 1024 or (decl[k].choices is not None and v not in decl[k].choices):
-                raise HTTPException(400, f"invalid value for param {k}")
+        check_params(cfg, body.params)
         names = [s.name for s in cfg.stages]
         for s in body.stages:
             if s not in names:
@@ -304,7 +327,11 @@ async def upload(pid: int, request: Request, who: str = Depends(user)):
         out = await run_in_threadpool(store_uploads, request, pid, who, files, extract)
     finally:
         await form.close()
-    # phase 3: trigger auto-build here (once per request) if any(not o["unchanged"]) and config.auto_build
+    # One build per request, and only if something actually changed (re-uploading identical files does not rebuild).
+    with conn(request) as c:
+        auto = PipelineConfig(**json.loads(get_pipeline(c, pid)["config"])).auto_build
+    if auto and any(not o["unchanged"] for o in out):
+        await run_in_threadpool(create_build, request, pid, BuildIn(), f"auto:{who}")
     return out
 
 
@@ -354,11 +381,7 @@ def store_uploads(request, pid, who, files, extract):
             raise HTTPException(400, "duplicate path in request")
         out = []
         with conn(request) as c:
-            # a file and a directory can't share a name in the build workspace ("a" vs "a/b")
-            paths = {r["path"] for r in current_files(c, pid)} | {x[0] for x in items}
-            dirs = {p.rsplit("/", k)[0] for p in paths for k in range(1, p.count("/") + 1)}
-            if clash := paths & dirs:
-                raise HTTPException(400, f"file and directory share a path: {min(clash)[:80]!r}")
+            check_clash({r["path"] for r in current_files(c, pid)} | {x[0] for x in items})
             for path, _, sha, n in items:
                 last = c.execute("SELECT id, version, sha256 FROM upload WHERE pipeline_id=? AND path=? "
                                  "ORDER BY version DESC LIMIT 1", (pid, path)).fetchone()
@@ -406,6 +429,160 @@ def download(uid: int, request: Request):
     return FileResponse(request.app.state.data / "blobs" / r["sha256"], filename=r["path"].rsplit("/", 1)[-1],
                         media_type="application/octet-stream", content_disposition_type="attachment",
                         headers={"X-Content-Type-Options": "nosniff"})
+
+
+# ---- builds ----
+def create_build(request, pid, body, who):
+    """Resolve params/stages/files, snapshot them on a new queued build row and hand it to the runner."""
+    with conn(request) as c:
+        c.execute("BEGIN IMMEDIATE")  # validation and number allocation see one consistent state
+        cfg = PipelineConfig(**json.loads(get_pipeline(c, pid)["config"]))
+        params = {p.name: p.default for p in cfg.params}
+        names = [s.name for s in cfg.stages]
+        config_name, wanted = None, None
+        if body.config_id is not None:
+            rc = c.execute("SELECT * FROM run_config WHERE id=? AND pipeline_id=?", (body.config_id, pid)).fetchone()
+            if rc is None:
+                raise HTTPException(400, "unknown config_id")
+            config_name, wanted = rc["name"], json.loads(rc["stages"])
+            check_params(cfg, json.loads(rc["params"]))  # the pipeline may have changed since it was saved
+            params.update(json.loads(rc["params"]))
+        check_params(cfg, body.params)
+        params.update(body.params)
+        if body.stages:
+            wanted = body.stages
+        for s in wanted or []:
+            if s not in names:
+                raise HTTPException(400, f"unknown stage {s}")
+        stages = [s.model_dump() for s in cfg.stages if wanted is None or s.name in wanted]
+        if not stages:
+            raise HTTPException(400, "no stages selected")
+
+        files = {r["path"]: r for r in current_files(c, pid)}
+        pinned = set()
+        for uid in body.upload_ids:
+            u = c.execute("SELECT id, path, version, sha256 FROM upload WHERE id=? AND pipeline_id=?", (uid, pid)).fetchone()
+            if u is None or u["sha256"] is None:
+                raise HTTPException(400, f"upload {uid} not found in this pipeline or is a removal marker")
+            if u["path"] in pinned:
+                raise HTTPException(400, f"two pinned versions of {u['path'][:80]!r}")
+            pinned.add(u["path"])
+            files[u["path"]] = u
+        check_clash(set(files))
+        frozen = [{"path": p, "upload_id": r["id"], "version": r["version"], "sha256": r["sha256"]}
+                  for p, r in sorted(files.items())]
+
+        number = c.execute("UPDATE pipeline SET next_build_no = next_build_no + 1 WHERE id=? "
+                           "RETURNING next_build_no - 1", (pid,)).fetchone()[0]
+        bid = c.execute("INSERT INTO build (pipeline_id, number, status, config_name, params, stages, files, triggered_by) "
+                        "VALUES (?,?,'queued',?,?,?,?,?)",
+                        (pid, number, config_name, json.dumps(params), json.dumps(stages), json.dumps(frozen), who)).lastrowid
+    runner.submit(bid)  # after commit, so the runner thread can see the row
+    with conn(request) as c:
+        return build_out(c, bid)
+
+
+def build_out(c, bid, detail=True):
+    r = c.execute("SELECT * FROM build WHERE id=?", (bid,)).fetchone()
+    if r is None:
+        raise HTTPException(404, "build not found")
+    out = {**dict(r), "params": json.loads(r["params"]), "stages": json.loads(r["stages"]),
+           "files": json.loads(r["files"]), "abort_requested": bool(r["abort_requested"])}
+    if detail:
+        out["stage_runs"] = [dict(s) for s in c.execute("SELECT * FROM stage_run WHERE build_id=? ORDER BY seq", (bid,))]
+    return out
+
+
+@app.post("/api/pipelines/{pid}/builds", status_code=201, dependencies=[Depends(team_auth)])
+def trigger_build(pid: int, request: Request, body: BuildIn | None = None, who: str = Depends(user)):
+    return create_build(request, pid, body or BuildIn(), who)
+
+
+@app.get("/api/pipelines/{pid}/builds", dependencies=[Depends(team_auth)])
+def list_builds(pid: int, request: Request, limit: int = Query(50, ge=1, le=500)):
+    with conn(request) as c:
+        get_pipeline(c, pid)
+        return [{k: r[k] for k in ("id", "pipeline_id", "number", "status", "config_name", "triggered_by",
+                                   "created_at", "started_at", "finished_at")}
+                for r in c.execute("SELECT * FROM build WHERE pipeline_id=? ORDER BY number DESC LIMIT ?", (pid, limit))]
+
+
+@app.get("/api/builds/{bid}", dependencies=[Depends(team_auth)])
+def read_build(bid: int, request: Request):
+    with conn(request) as c:
+        return build_out(c, bid)
+
+
+@app.get("/api/builds/{bid}/stages/{seq}/log", dependencies=[Depends(team_auth)])
+def stage_log(bid: int, seq: int, request: Request, offset: int = Query(0, ge=0)):
+    with conn(request) as c:
+        st = c.execute("SELECT status FROM stage_run WHERE build_id=? AND seq=?", (bid, seq)).fetchone()
+    if st is None:
+        raise HTTPException(404, "stage not found")
+    finished = st["status"] not in ("pending", "running")  # read before the file: a finished stage's log is final
+    try:
+        with open(request.app.state.data / "builds" / str(bid) / "logs" / f"{seq}.log", "rb") as f:
+            size = os.fstat(f.fileno()).st_size
+            f.seek(offset)
+            chunk = f.read(LOG_CHUNK)
+    except FileNotFoundError:
+        size, chunk = 0, b""
+    if not finished or len(chunk) == LOG_CHUNK:  # don't split a multi-byte character across reads
+        try:
+            chunk.decode()
+        except UnicodeDecodeError as e:
+            if e.reason == "unexpected end of data" and e.start >= len(chunk) - 3:
+                chunk = chunk[:e.start]
+    nxt = offset + len(chunk)
+    return {"data": chunk.decode(errors="replace"), "next_offset": nxt, "complete": finished and nxt >= size}
+
+
+@app.post("/api/builds/{bid}/abort", dependencies=[Depends(team_auth), Depends(user)])
+def abort_build(bid: int, request: Request):
+    with conn(request) as c:
+        b = build_out(c, bid, detail=False)
+        if b["status"] in ("passed", "failed"):
+            raise HTTPException(409, "build already finished")
+        # one transaction each, so the runner's queued->running update and this one can't both win
+        c.execute("UPDATE build SET abort_requested=1 WHERE id=? AND status IN ('queued','running')", (bid,))
+        c.execute("UPDATE build SET status='aborted', finished_at=CURRENT_TIMESTAMP WHERE id=? AND status='queued'", (bid,))
+    runner.abort(bid)  # after commit: the runner re-reads the flag under the same lock
+    with conn(request) as c:
+        return build_out(c, bid)
+
+
+def artifact_file(request, bid, path):
+    """Resolve an artifact path; None unless it is an existing regular file inside the build's artifacts/ dir."""
+    base = (request.app.state.data / "builds" / str(bid) / "artifacts").resolve()
+    try:
+        f = (base / path).resolve()  # follows symlinks, so a link pointing outside fails the check below
+        f.relative_to(base)
+    except (ValueError, OSError):
+        return None
+    return f if f.is_file() else None
+
+
+@app.get("/api/builds/{bid}/artifacts", dependencies=[Depends(team_auth)])
+def list_artifacts(bid: int, request: Request):
+    with conn(request) as c:
+        build_out(c, bid, detail=False)
+    base = request.app.state.data / "builds" / str(bid) / "artifacts"
+    out = []
+    for dirpath, _, names in os.walk(base):  # os.walk doesn't follow directory symlinks
+        for n in names:
+            rel = (Path(dirpath) / n).relative_to(base).as_posix()
+            if f := artifact_file(request, bid, rel):
+                out.append({"path": rel, "size": f.stat().st_size})
+    return sorted(out, key=lambda a: a["path"])
+
+
+@app.get("/api/builds/{bid}/artifacts/{path:path}", dependencies=[Depends(team_auth)])
+def download_artifact(bid: int, path: str, request: Request):
+    f = artifact_file(request, bid, path)
+    if f is None:
+        raise HTTPException(404, "artifact not found")
+    return FileResponse(f, filename=f.name, media_type="application/octet-stream",
+                        content_disposition_type="attachment", headers={"X-Content-Type-Options": "nosniff"})
 
 
 # Static UI, no auth. Mounted last so /api wins.

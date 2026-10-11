@@ -1,5 +1,12 @@
 # Changelog
 
+## Phase 3: builds and runner
+- `upriver/runner.py`: thread pool (`UPRIVER_EXECUTORS`), workspace snapshot copied from blobs, one `/bin/sh -c` process group per stage with a scrubbed env and a log file, timeout (SIGTERM, SIGKILL after 5 s), `on_fail` stop/continue, abort of queued and running builds, startup recovery (running -> aborted, queued resubmitted), pool shutdown (kills live stages) on app exit.
+- Routes: trigger/list builds, build detail with stage runs, log reads by offset (64 KB, utf-8 replace, `complete` flag), abort, artifact list and download (must resolve inside `artifacts/`).
+- Auto-build: one build per upload request, only when at least one file actually changed.
+- Aborting an already aborted build returns 200 (idempotent); 409 only for passed/failed builds.
+- `tests/test_builds.py`.
+
 ## Phase 2 review fixes
 - Uploads require `Content-Length` (411 otherwise): chunked bodies skipped the early size check and could store unlimited data.
 - The size cap is one budget per request, extracted zip bytes included; several zips could each extract up to the cap.
