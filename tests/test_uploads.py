@@ -62,20 +62,45 @@ def symlink_member():
     return ("link", zi)
 
 
-@pytest.mark.parametrize("name", ["../x", "/abs", "a//b", "a/../b", "a\\b", "C:/x", "a/./b", "", "x" * 256])
+@pytest.mark.parametrize("name", ["../x", "/abs", "a//b", "a/../b", "a\\b", "C:/x", "a/./b", "", "x" * 256,
+                                  "a/", ".", "..", "\u00e9" * 128])
 def test_bad_paths_rejected(client, team, tmp_path, name):
-    assert up(client, team, [(name, b"x")]).status_code == 400
+    # a valid file first: the whole request must be rejected, not just the bad part
+    assert up(client, team, [("ok.txt", b"1"), (name, b"x")]).status_code == 400
     nothing_stored(client, tmp_path)
 
 
 def test_bad_zips_rejected(client, team, tmp_path):
     for z in (mkzip([("ok.txt", b"1"), ("../evil", b"2")]),
               mkzip([("ok.txt", b"1"), symlink_member()]),
+              mkzip([("ok.txt", b"1"), ("a\nb", b"2")]),  # control chars (multipart clients escape them)
+              mkzip([("d/", b"")]),  # nothing to store
+              corrupt_deflate(),
               b"not a zip"):
         assert up(client, team, [("p.zip", z)], extract=True).status_code == 400
     nothing_stored(client, tmp_path)
     assert client.get(f"/api/pipelines/{PID}/uploads", params={"path": "../x"}, headers=team).status_code == 400
     assert client.delete(f"/api/pipelines/{PID}/files", params={"path": "../x"}, headers=team).status_code == 400
+    assert client.get(f"/api/pipelines/{PID}/uploads", params={"path": "a\x7fb"}, headers=team).status_code == 400
+
+
+def corrupt_deflate():
+    z = bytearray(mkzip([("ok.txt", b"1"), ("a", b"hello world " * 100)]))
+    i = z.find(b"a", z.find(b"ok.txt") + 7) + 1  # start of a's compressed data
+    z[i:i + 20] = bytes(b ^ 0xFF for b in z[i:i + 20])
+    return bytes(z)
+
+
+def test_duplicate_and_conflicting_paths(client, team, tmp_path):
+    assert up(client, team, [("ok.txt", b"1"), ("p.zip", mkzip([("ok.txt", b"2")]))], extract=True).status_code == 400
+    assert up(client, team, [("a", b"1"), ("a/b", b"2")]).status_code == 400
+    nothing_stored(client, tmp_path)
+    up(client, team, [("a", b"1"), ("d/e", b"2")])
+    for name in ("a/b", "d"):  # file vs directory of the same name can't both be in the workspace
+        assert up(client, team, [(name, b"x")]).status_code == 400
+    assert [f["path"] for f in client.get(f"/api/pipelines/{PID}/files", headers=team).json()] == ["a", "d/e"]
+    client.delete(f"/api/pipelines/{PID}/files", params={"path": "a"}, headers=team)
+    assert up(client, team, [("a/b", b"x")]).status_code == 200  # fine once "a" is removed
 
 
 def test_zip_member_count(client, team, tmp_path, monkeypatch):
@@ -92,7 +117,16 @@ def small_cap(monkeypatch):
 
 def test_size_cap(small_cap, client, team, tmp_path):
     mb = 1024 * 1024
-    assert up(client, team, [("big", b"0" * (mb + 1))]).status_code == 413
+    assert up(client, team, [("ok", b"1"), ("big", b"0" * (mb + 1))]).status_code == 413
+    nothing_stored(client, tmp_path)
+    # the cap covers the whole request: two zips can't each extract up to the cap
+    z1, z2 = mkzip([("a", b"0" * (mb // 2 + 1))]), mkzip([("b", b"0" * (mb // 2 + 1))])
+    assert up(client, team, [("1.zip", z1), ("2.zip", z2)], extract=True).status_code == 413
+    nothing_stored(client, tmp_path)
+    # chunked bodies carry no Content-Length, so they'd skip the early check
+    r = client.post(f"/api/pipelines/{PID}/uploads", headers={**team, "Content-Type": "multipart/form-data; boundary=x"},
+                    content=iter([b"--x--\r\n"]))
+    assert r.status_code == 411
     nothing_stored(client, tmp_path)
     # compresses to a few KB, 2 MB uncompressed across members: cap applies to the uncompressed total
     z = mkzip([("a", b"0" * mb), ("b", b"0" * mb)])

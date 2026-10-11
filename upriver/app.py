@@ -1,12 +1,14 @@
 import hashlib
 import hmac
 import json
+import lzma
 import os
 import re
 import sqlite3
 import stat
 import tempfile
 import zipfile
+import zlib
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Literal
@@ -15,6 +17,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, field_validator, model_validator
+from starlette.concurrency import run_in_threadpool
 from starlette.datastructures import UploadFile
 
 from . import db
@@ -153,8 +156,9 @@ def rc_out(r):
 def safe_path(name):
     """Validate an untrusted relative POSIX path; returns it unchanged or raises 400."""
     segs = name.split("/")
-    if (not name or len(name) > 255 or "\0" in name or "\\" in name or name.startswith("/")
-            or any(s in ("", ".", "..") for s in segs) or ":" in segs[0]):
+    # bytes, not chars: Linux NAME_MAX is 255 bytes. Control chars (incl. NUL, newline) would forge log/manifest lines.
+    if (not name or len(name.encode(errors="replace")) > 255 or any(ch < " " or ch == "\x7f" for ch in name)
+            or "\\" in name or name.startswith("/") or any(s in ("", ".", "..") for s in segs) or ":" in segs[0]):
         raise HTTPException(400, f"invalid path {name[:80]!r}")
     return name
 
@@ -278,66 +282,83 @@ def list_uploads(pid: int, path: str, request: Request):
             "WHERE pipeline_id=? AND path=? ORDER BY version DESC LIMIT 200", (pid, path))]
 
 
-# ponytail: async so we can await the form; the file work below blocks the loop (fine for a small team,
-# move to a threadpool if uploads get big/concurrent). Starlette spools the multipart body to disk first.
+# async only to reject on Content-Length before the body is parsed; the blocking file work runs in a thread.
 @app.post("/api/pipelines/{pid}/uploads", dependencies=[Depends(team_auth)])
 async def upload(pid: int, request: Request, who: str = Depends(user)):
     s = request.app.state
-    cap = s.max_upload
-    # ponytail: whole-request cap (cap + 1 MB overhead), not per file; raise the env var for bigger batches
-    if int(request.headers.get("content-length") or 0) > cap + (1 << 20):
+    # ponytail: whole-request cap (cap + 1 MB overhead), not per file; raise the env var for bigger batches.
+    # Required, so chunked bodies can't skip it (the server enforces the declared length).
+    length = request.headers.get("content-length")
+    if length is None:
+        raise HTTPException(411, "Content-Length required")
+    if int(length) > s.max_upload + (1 << 20):
         raise HTTPException(413, "upload too large")
     with conn(request) as c:
         get_pipeline(c, pid)
     form = await request.form()
-    files = form.getlist("files")
-    extract = str(form.get("extract", "")).lower() in ("1", "true", "yes", "on")
-    if not files or not all(isinstance(f, UploadFile) for f in files):
-        raise HTTPException(400, "multipart field 'files' required")
+    try:
+        files = form.getlist("files")
+        extract = str(form.get("extract", "")).lower() in ("1", "true", "yes", "on")
+        if not files or not all(isinstance(f, UploadFile) for f in files):
+            raise HTTPException(400, "multipart field 'files' required")
+        out = await run_in_threadpool(store_uploads, request, pid, who, files, extract)
+    finally:
+        await form.close()
+    # phase 3: trigger auto-build here (once per request) if any(not o["unchanged"]) and config.auto_build
+    return out
+
+
+def store_uploads(request, pid, who, files, extract):
+    s = request.app.state
     tmpdir = s.data / "tmp"
+    left = s.max_upload  # one budget for everything stored by this request, extracted bytes included
     staged = []  # (path, tmp, sha, size); every tmp is removed in `finally` unless moved into blobs/
     try:
         for f in files:
             name = safe_path(f.filename or "")
             if extract and name.lower().endswith(".zip"):
-                ztmp, _, _ = spool(f.file.read, tmpdir, cap)
+                ztmp, _, _ = spool(f.file.read, tmpdir, s.max_upload)
                 staged.append((None, ztmp, None, 0))
                 try:
                     z = zipfile.ZipFile(ztmp)
-                    infos = z.infolist()
                 except zipfile.BadZipFile:
                     raise HTTPException(400, "bad zip file")
-                if len(infos) > MAX_ZIP_MEMBERS:
-                    raise HTTPException(400, "too many zip members")
-                members = [i for i in infos if not i.is_dir()]
-                for i in members:
-                    if stat.S_ISLNK(i.external_attr >> 16):
-                        raise HTTPException(400, f"symlink in zip: {i.filename[:80]!r}")
-                    safe_path(i.filename)
-                if sum(i.file_size for i in members) > cap:
-                    raise HTTPException(413, "zip too large when extracted")
-                left = cap  # declared sizes can lie, so enforce on bytes actually read
-                for i in members:
-                    try:
-                        with z.open(i) as src:
-                            tmp, sha, n = spool(src.read, tmpdir, left)
-                    except (zipfile.BadZipFile, RuntimeError, NotImplementedError, EOFError):
-                        raise HTTPException(400, f"unreadable zip member {i.filename[:80]!r}")
-                    left -= n
-                    staged.append((i.filename, tmp, sha, n))
+                with z:
+                    infos = z.infolist()
+                    if len(infos) > MAX_ZIP_MEMBERS:
+                        raise HTTPException(400, "too many zip members")
+                    members = [i for i in infos if not i.is_dir()]
+                    for i in members:
+                        if stat.S_ISLNK(i.external_attr >> 16):
+                            raise HTTPException(400, f"symlink in zip: {i.filename[:80]!r}")
+                        safe_path(i.filename)
+                    if sum(i.file_size for i in members) > left:
+                        raise HTTPException(413, "zip too large when extracted")
+                    for i in members:  # declared sizes can lie, so spool() also enforces on bytes actually read
+                        try:
+                            with z.open(i) as src:
+                                tmp, sha, n = spool(src.read, tmpdir, left)
+                        except (zipfile.BadZipFile, RuntimeError, NotImplementedError, EOFError,
+                                zlib.error, lzma.LZMAError, OSError):  # bz2 raises OSError on bad data
+                            raise HTTPException(400, f"unreadable zip member {i.filename[:80]!r}")
+                        left -= n
+                        staged.append((i.filename, tmp, sha, n))
             else:
-                tmp, sha, n = spool(f.file.read, tmpdir, cap)
+                tmp, sha, n = spool(f.file.read, tmpdir, left)
+                left -= n
                 staged.append((name, tmp, sha, n))
         items = [x for x in staged if x[0] is not None]
         if not items:
             raise HTTPException(400, "nothing to store")
         if len({x[0] for x in items}) != len(items):
             raise HTTPException(400, "duplicate path in request")
-        (s.data / "blobs").mkdir(exist_ok=True)
-        for _, tmp, sha, _ in items:
-            os.replace(tmp, s.data / "blobs" / sha)  # identical content just rewrites the same blob
         out = []
         with conn(request) as c:
+            # a file and a directory can't share a name in the build workspace ("a" vs "a/b")
+            paths = {r["path"] for r in current_files(c, pid)} | {x[0] for x in items}
+            dirs = {p.rsplit("/", k)[0] for p in paths for k in range(1, p.count("/") + 1)}
+            if clash := paths & dirs:
+                raise HTTPException(400, f"file and directory share a path: {min(clash)[:80]!r}")
             for path, _, sha, n in items:
                 last = c.execute("SELECT id, version, sha256 FROM upload WHERE pipeline_id=? AND path=? "
                                  "ORDER BY version DESC LIMIT 1", (pid, path)).fetchone()
@@ -350,14 +371,16 @@ async def upload(pid: int, request: Request, who: str = Depends(user)):
                                 "VALUES (?,?,?,?,?,?)", (pid, path, ver, sha, n, who)).lastrowid
                 out.append({"id": uid, "path": path, "version": ver, "sha256": sha, "size": n,
                             "unchanged": False})
+            # blobs land before commit, so a committed row never points at a missing blob
+            (s.data / "blobs").mkdir(exist_ok=True)
+            for _, tmp, sha, _ in items:
+                os.replace(tmp, s.data / "blobs" / sha)  # identical content just rewrites the same blob
     except sqlite3.IntegrityError:
         raise HTTPException(409, "concurrent upload of the same path, retry")
     finally:
         for _, tmp, _, _ in staged:
             if os.path.exists(tmp):
                 os.unlink(tmp)
-        await form.close()
-    # phase 3: trigger auto-build here (once per request) if any(not o["unchanged"]) and config.auto_build
     return out
 
 
