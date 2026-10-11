@@ -1,5 +1,13 @@
 # Changelog
 
+## Phase 3 review fixes
+- An internal runner error (e.g. a missing blob during the workspace copy) now writes `[upriver] internal error: ...` to the log of the stage it hit and marks that stage failed; before, the build just showed "failed" with no stages. Stage rows are created before the copy so there is a stage to report in. A process started before the crash is killed and reaped.
+- Param values containing NUL are rejected (400); they crashed `Popen`.
+- Log reads: a trailing partial UTF-8 character is held back with an incremental decoder; an invalid byte earlier in the chunk used to defeat the check and split the character into two replacement chars.
+- Artifacts: a stage that replaced `artifacts/` itself with a symlink could expose files outside it; the base dir is no longer resolved.
+- Timed-out/aborted processes are reaped after SIGKILL (no transient zombie).
+- Tests: split char after invalid byte, symlinked artifacts dir, internal error in stage log + NUL param.
+
 ## Phase 3: builds and runner
 - `upriver/runner.py`: thread pool (`UPRIVER_EXECUTORS`), workspace snapshot copied from blobs, one `/bin/sh -c` process group per stage with a scrubbed env and a log file, timeout (SIGTERM, SIGKILL after 5 s), `on_fail` stop/continue, abort of queued and running builds, startup recovery (running -> aborted, queued resubmitted), pool shutdown (kills live stages) on app exit.
 - Routes: trigger/list builds, build detail with stage runs, log reads by offset (64 KB, utf-8 replace, `complete` flag), abort, artifact list and download (must resolve inside `artifacts/`).

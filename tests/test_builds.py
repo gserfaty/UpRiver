@@ -260,3 +260,31 @@ def test_startup_recovery(tmp_path, monkeypatch, team):
         assert dead["status"] == "aborted" and dead["finished_at"] and statuses(dead) == ["aborted", "skipped"]
         wait_until(lambda: get(2)["status"] == "passed")
         assert "recovered" in c.get("/api/builds/2/stages/0/log", headers=team).json()["data"]
+
+
+def test_log_offset_split_char_after_invalid_byte(client, team, admin, wait_build):
+    # an invalid byte early in the chunk must not stop the trailing "é" from being held back whole
+    cmd = "printf '\\377'; head -c 65534 /dev/zero | tr '\\000' x; printf '\\303\\251end'"
+    b = wait_build(build(client, team, mkpipe(client, admin, [stage("s", cmd)])))
+    url = f"/api/builds/{b['id']}/stages/0/log"
+    first = client.get(url, headers=team).json()
+    assert first["next_offset"] == 65535 and first["data"].endswith("x") and not first["complete"]
+    assert client.get(url, params={"offset": 65535}, headers=team).json() == {"data": "éend", "next_offset": 65540, "complete": True}
+
+
+def test_artifacts_dir_replaced_by_symlink(client, team, admin, wait_build, tmp_path):
+    (tmp_path / "secret.txt").write_text("secret")
+    pid = mkpipe(client, admin, [stage("s", f'rm -rf "$ARTIFACTS_DIR"; ln -s {tmp_path} "$ARTIFACTS_DIR"')])
+    bid = wait_build(build(client, team, pid))["id"]
+    assert client.get(f"/api/builds/{bid}/artifacts", headers=team).json() == []
+    assert client.get(f"/api/builds/{bid}/artifacts/secret.txt", headers=team).status_code == 404
+
+
+def test_internal_error_shown_in_stage_log(client, team, admin, wait_build, tmp_path):
+    pid = mkpipe(client, admin, [stage("s", "true"), stage("t", "true")], params=[{"name": "P", "default": ""}])
+    assert client.post(f"/api/pipelines/{pid}/builds", json={"params": {"P": "a\0b"}}, headers=team).status_code == 400
+    up = put(client, team, pid, "a.txt", b"x")
+    (tmp_path / "blobs" / up["sha256"]).unlink()  # the workspace copy will fail
+    b = wait_build(build(client, team, pid))
+    assert b["status"] == "failed" and statuses(b) == ["failed", "skipped"]
+    assert "[upriver] internal error: FileNotFoundError" in client.get(f"/api/builds/{b['id']}/stages/0/log", headers=team).json()["data"]

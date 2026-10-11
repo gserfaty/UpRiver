@@ -70,19 +70,33 @@ def _term_then_kill(p):
         p.wait(5)
     except subprocess.TimeoutExpired:
         _killpg(p, signal.SIGKILL)
+        p.wait()  # reap, no zombie
 
 
 def run_build(bid):
     try:
         _run(bid)
-    except Exception:
-        # ponytail: the traceback goes to the server log only; the build just shows "failed". Surface it in the UI if it happens a lot.
+    except Exception as e:
         log.exception("build %s crashed", bid)
-        if not _stopping:
-            with db.connect(_db) as c:
-                c.execute("UPDATE stage_run SET status='failed', finished_at=CURRENT_TIMESTAMP WHERE build_id=? AND status='running'", (bid,))
-                c.execute("UPDATE stage_run SET status='skipped' WHERE build_id=? AND status='pending'", (bid,))
-                c.execute("UPDATE build SET status='failed', finished_at=CURRENT_TIMESTAMP WHERE id=? AND status='running'", (bid,))
+        with _lock:
+            p = _procs.pop(bid, None)
+        if p:  # crashed after Popen: don't leave the stage running
+            _killpg(p, signal.SIGKILL)
+            p.wait()
+        if _stopping:
+            return
+        with db.connect(_db) as c:
+            # blame the stage that was running (or next): it gets the error in its log so users see why
+            r = c.execute("SELECT seq FROM stage_run WHERE build_id=? AND status IN ('running','pending') ORDER BY seq LIMIT 1", (bid,)).fetchone()
+            if r:
+                try:
+                    with open(_data / "builds" / str(bid) / "logs" / f"{r[0]}.log", "ab") as f:
+                        f.write(f"\n[upriver] internal error: {type(e).__name__}: {e}\n"[:2000].encode(errors="replace"))
+                except OSError:
+                    pass
+                c.execute("UPDATE stage_run SET status='failed', finished_at=CURRENT_TIMESTAMP WHERE build_id=? AND seq=?", (bid, r[0]))
+            c.execute("UPDATE stage_run SET status='skipped' WHERE build_id=? AND status='pending'", (bid,))
+            c.execute("UPDATE build SET status='failed', finished_at=CURRENT_TIMESTAMP WHERE id=? AND status='running'", (bid,))
 
 
 def _abort_requested(bid):
@@ -103,15 +117,14 @@ def _run(bid):
     shutil.rmtree(root, ignore_errors=True)  # leftovers of a crashed earlier attempt
     for d in (ws, arts, logs):
         d.mkdir(parents=True)
+    with db.connect(_db) as c:  # before the copy, so a copy failure has a stage to report it in
+        for seq, st in enumerate(stages):
+            c.execute("INSERT INTO stage_run (build_id, seq, name, kind, status) VALUES (?,?,?,?,'pending')",
+                      (bid, seq, st["name"], st["kind"]))
     for f in files:  # copies, not links: a stage must not be able to modify a blob
         dest = ws / f["path"]
         dest.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(_data / "blobs" / f["sha256"], dest)
-
-    with db.connect(_db) as c:
-        for seq, st in enumerate(stages):
-            c.execute("INSERT INTO stage_run (build_id, seq, name, kind, status) VALUES (?,?,?,?,'pending')",
-                      (bid, seq, st["name"], st["kind"]))
 
     env = {"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "HOME": os.environ.get("HOME", "/"),
            "LANG": os.environ.get("LANG", "C.UTF-8"),

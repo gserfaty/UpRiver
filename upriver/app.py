@@ -1,3 +1,4 @@
+import codecs
 import hashlib
 import hmac
 import json
@@ -165,7 +166,7 @@ def check_params(cfg, params):
     for k, v in params.items():
         if k not in decl:
             raise HTTPException(400, f"unknown param {k}")
-        if len(v) > 1024 or (decl[k].choices is not None and v not in decl[k].choices):
+        if len(v) > 1024 or "\0" in v or (decl[k].choices is not None and v not in decl[k].choices):
             raise HTTPException(400, f"invalid value for param {k}")
 
 
@@ -527,14 +528,12 @@ def stage_log(bid: int, seq: int, request: Request, offset: int = Query(0, ge=0)
             chunk = f.read(LOG_CHUNK)
     except FileNotFoundError:
         size, chunk = 0, b""
-    if not finished or len(chunk) == LOG_CHUNK:  # don't split a multi-byte character across reads
-        try:
-            chunk.decode()
-        except UnicodeDecodeError as e:
-            if e.reason == "unexpected end of data" and e.start >= len(chunk) - 3:
-                chunk = chunk[:e.start]
-    nxt = offset + len(chunk)
-    return {"data": chunk.decode(errors="replace"), "next_offset": nxt, "complete": finished and nxt >= size}
+    # hold back a trailing partial UTF-8 character unless this is the final read; it comes whole next time
+    final = finished and len(chunk) < LOG_CHUNK
+    dec = codecs.getincrementaldecoder("utf-8")("replace")
+    data = dec.decode(chunk, final)
+    nxt = offset + len(chunk) - len(dec.getstate()[0])
+    return {"data": data, "next_offset": nxt, "complete": finished and nxt >= size}
 
 
 @app.post("/api/builds/{bid}/abort", dependencies=[Depends(team_auth), Depends(user)])
@@ -553,7 +552,8 @@ def abort_build(bid: int, request: Request):
 
 def artifact_file(request, bid, path):
     """Resolve an artifact path; None unless it is an existing regular file inside the build's artifacts/ dir."""
-    base = (request.app.state.data / "builds" / str(bid) / "artifacts").resolve()
+    # data is already resolved; resolving artifacts/ too would follow a stage that replaced it with a symlink
+    base = request.app.state.data / "builds" / str(bid) / "artifacts"
     try:
         f = (base / path).resolve()  # follows symlinks, so a link pointing outside fails the check below
         f.relative_to(base)
