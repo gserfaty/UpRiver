@@ -91,3 +91,10 @@ def test_missing_user_header_400(client):
     assert client.post("/api/pipelines/1/configs", json={"name": "x"}, headers={**h, "X-UpRiver-User": " "}).status_code == 400
     assert client.post("/api/pipelines/1/configs", json={"name": "x"}, headers={**h, "X-UpRiver-User": "u" * 65}).status_code == 400
     assert client.post("/api/pipelines", json=pipe(), headers={"Authorization": "Bearer a"}).status_code == 400
+
+
+def test_index_served(client):
+    r = client.get("/")
+    assert r.status_code == 200 and "text/html" in r.headers["content-type"] and "app.js" in r.text
+    r = client.get("/app.js")
+    assert r.status_code == 200 and "javascript" in r.headers["content-type"]

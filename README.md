@@ -13,6 +13,12 @@ Status: phase 3 (uploads, builds and runner; the UI is still a placeholder). See
 
 API docs at http://127.0.0.1:8080/docs. Every `/api` call needs `Authorization: Bearer <token>`; writes also need `X-UpRiver-User: <name>`. Creating/updating pipelines needs the admin token.
 
+## Using the UI
+Open `http://localhost:8000/`. On first visit enter your name and the team token (and the admin token if you create or edit pipelines); they are stored in the browser's localStorage. Then:
+- **Pipelines** (`#/`): pick one, or paste JSON under "New pipeline" (admin).
+- **Pipeline page**: upload files (tick "extract zips" to unpack archives), open a file's History to pin an older version for the next build, pick a saved run config or set params and stages, then "Build now" or "Save as config". Settings edits the pipeline JSON (admin).
+- **Build page**: click a stage to see its live log; Abort while queued or running; download artifacts when done.
+
 ## Environment variables
 
 | var | default | meaning |

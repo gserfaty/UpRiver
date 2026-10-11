@@ -1,5 +1,12 @@
 # Changelog
 
+## Phase 4: web UI
+- `static/index.html` + `static/app.js`: vanilla JS, no build step, hash routed (`#/` pipelines, `#/p/{id}` pipeline, `#/b/{id}` build). Sign-in bar (name, team token, optional admin token) kept in localStorage; every request sends the bearer token and `X-UpRiver-User`; API errors (401/403/413/...) show inline.
+- Files (upload with "extract zips", version history with pin checkbox, remove), Run (config, params, stages, Build now with pinned versions, Save as config), Builds history, admin Settings JSON editor; build page with abort, stage statuses, live log (1.5 s offset polling), build polled every 2 s while active, artifact downloads.
+- All server text is rendered with `textContent`/`createElement`; downloads use fetch -> blob -> object URL so no token is ever in a URL; pollers stop on navigation.
+- Admin token is sent only for creating/updating pipelines; everything else uses the team token.
+- `test_index_served`.
+
 ## Phase 3 review fixes
 - An internal runner error (e.g. a missing blob during the workspace copy) now writes `[upriver] internal error: ...` to the log of the stage it hit and marks that stage failed; before, the build just showed "failed" with no stages. Stage rows are created before the copy so there is a stage to report in. A process started before the crash is killed and reaped.
 - Param values containing NUL are rejected (400); they crashed `Popen`.
