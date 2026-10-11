@@ -1,0 +1,19 @@
+{
+  "name": "demo",
+  "description": "Demo pipeline: trivial BVT then FVT.",
+  "config": {
+    "auto_build": false,
+    "params": [
+      {"name": "TARGET", "default": "dev", "choices": ["dev", "staging"]},
+      {"name": "FORCE_FAIL", "default": "no", "choices": ["no", "yes"]}
+    ],
+    "stages": [
+      {"name": "bvt", "kind": "bvt", "command": "sh \"$UPRIVER_ROOT/samples/bvt.sh\"", "timeout_s": 120, "on_fail": "stop"},
+      {"name": "fvt", "kind": "fvt", "command": "sh \"$UPRIVER_ROOT/samples/fvt.sh\"", "timeout_s": 120, "on_fail": "continue"}
+    ]
+  },
+  "run_configs": [
+    {"name": "quick", "params": {"TARGET": "dev", "FORCE_FAIL": "no"}, "stages": ["bvt"]},
+    {"name": "full", "params": {"TARGET": "staging", "FORCE_FAIL": "no"}, "stages": ["bvt", "fvt"]}
+  ]
+}
