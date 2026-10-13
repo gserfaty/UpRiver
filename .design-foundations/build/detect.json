@@ -1,0 +1,15 @@
+{
+  "detector": "detect.mjs",
+  "version": 1,
+  "attribution": "Rule subset ported from Impeccable (pbakaus/impeccable), Apache-2.0, with modifications — see file header. Catalog: references/visual/ai-tells.md.",
+  "status": "ran",
+  "sources": [
+    "/Users/gabriel/code/UpRiver/.design-foundations/mocks/build-page-failed.html"
+  ],
+  "rules": 16,
+  "findings": [],
+  "counts": {
+    "total": 0,
+    "byRule": {}
+  }
+}
