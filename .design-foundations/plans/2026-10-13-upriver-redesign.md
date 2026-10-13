@@ -5,7 +5,7 @@
 - **Track:** Full · **Entry stage:** Discover (neither `DESIGN.md` nor `JOURNEY.md` exists)
 - **Phases:** 3 · **DAG:** 1 → 2 → 3
 - **Gates:** `JOURNEY.md ## Page specs` before any Design page work; `DESIGN.md` locked before tokens, design system, or styled mocks
-- **Status:** in-progress · **Started:** 2026-10-13 · **Current Phase:** 1
+- **Status:** in-progress · **Started:** 2026-10-13 · **Current Phase:** 2
 
 ## Context
 
@@ -70,7 +70,7 @@ Discover first. `JOURNEY.md` fixes the jobs, the information architecture (sideb
 **Constraints:** Keep the Jenkins vocabulary (sidebar, `Dashboard > pipeline > #12`, Console Output). Do not change any route. Every page spec lists purpose, entry points, content blocks in order, states (empty, loading, error, success, running, failed), primary CTA and exit.
 
 **Edge cases:**
-- A build fails while the user is watching: focus moves automatically to the failed stage. Hick's law and Nielsen #1 (visibility of system status) apply.
+- A build fails while the user is watching: focus moves automatically to the failed stage, unless the user has manually picked a stage; then a persistent failure banner with a one-click "View log" appears instead (amended 2026-10-13 after Phase 1 review: never yank the user away from what they are reading). Hick's law and Nielsen #1 (visibility of system status) apply.
 - A team-only user opens an admin action: it is hidden or disabled with a reason, not left to fail with a 403.
 - A pipeline has 0 builds, 0 files or 0 configs: each of these empty states has a next step.
 - Compare is given a non-existent or identical pair of builds, or builds whose stage lists differ.
@@ -193,3 +193,10 @@ Discover first. `JOURNEY.md` fixes the jobs, the information architecture (sideb
 After build: implementation into `upriver/static/` by developer + critic agents (outside this plugin's scope).
 
 ## Execution log
+
+### Phase 1: Journey & page specs (Gate: Standard)
+- [x] BUILD: Discovery + design + production complete
+- [x] REVIEW: fail->fixed (3 attempts; final two Majors fixed with owner approval, no 4th review)
+- [x] Committed
+Commit: (this commit)
+Summary: JOURNEY.md defines job, journey, IA (routes, breadcrumbs, per-context sidebars), flows F1–F7 and complete page specs for Dashboard, Pipeline, Build, Compare and Sign-in; Phase 2 must define a focus-ring token (≥3:1 both themes).

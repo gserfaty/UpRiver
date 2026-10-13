@@ -1,5 +1,15 @@
 # Changelog
 
+## Design phase 1: journey and page specs
+- `JOURNEY.md`: job story, journey (trigger → watch → fail → diagnose → re-run/compare), IA (route map incl. `#/b/{id}/s/{seq}`, `#/c/{a}/{b}`, `#/signin`; breadcrumbs; sidebar actions per context), flows F1–F7, and page specs (purpose, entry points, blocks, states, CTA, exit) for Dashboard, Pipeline, Build, Compare, Sign-in.
+- Key rules: failed stage auto-focused unless the user picked a stage (then a "View log" banner); Follow never moves off a failed stage; unsaved Run-panel edits kept per pipeline with "Modified" + "Reset to saved"; leave/sign-out confirms on unsaved edits; admin actions disabled with a reason for team-only users; every empty state has a next step; 360px layouts per page; `/` focuses log search, `f` toggles Follow.
+- All 14 research pain points mapped; out of scope: per-line log timestamps, content diff on upload, undo for deletes, server-side build search.
+- Review: 3 independent design reviews (fail → fixed); final two usability fixes applied with owner approval.
+
+## Design groundwork
+- Repo made public; `.github/CODEOWNERS` (`* @gserfaty`) and `main` protection: PRs need code-owner approval (owner can still push).
+- `.design-foundations/`: research brief, redesign plan (journey → DNA → design system), approved greyscale Build-page wireframe mock + review. Mock sign-off pin: greyscale UI plus exactly one brand accent color; status colors stay semantic.
+
 ## Phase 4 review fixes
 - Navigation: each route now renders into a fresh container and pollers stop when their node leaves the page. Before, a slow page from the previous route appended into the new one (list content showed up under a build), and a build poller started after a quick navigation-away kept polling forever.
 - Build page: the log follows the running stage, then the failed one, until the user picks a stage (it used to stay on the stage that was running when the page opened). Pipeline is fetched once, not on every 2 s poll.
