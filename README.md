@@ -54,3 +54,7 @@ stdout and stderr go to one log per stage, readable while it runs with `GET /api
 ## Security
 
 Uploaded files can be executed by stage commands, so uploaders effectively have shell access as the server user. Run UpRiver as a dedicated unprivileged user and bind it to localhost/LAN/VPN only. There is no TLS; use a reverse proxy if exposed beyond a trusted network.
+
+## Contributing
+
+Open a pull request against `main`. Every PR needs approval from the code owner (@gserfaty) before it can merge.
