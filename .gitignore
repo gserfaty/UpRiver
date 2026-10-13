@@ -4,3 +4,8 @@ __pycache__/
 node_modules/
 data/
 *.db
+
+# design/planner artifacts stay local
+.design-foundations/
+JOURNEY.md
+DESIGN.md

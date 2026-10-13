@@ -1,5 +1,8 @@
 # Changelog
 
+## Keep design/planner artifacts local
+- `.design-foundations/`, `JOURNEY.md` and `DESIGN.md` are no longer tracked and are now gitignored (they stay on disk as working files for the redesign).
+
 ## Design phase 2: DNA, type and color (proposed, awaiting lock)
 - `DESIGN.md` "River Ledger": greyscale UI plus one muted river-teal accent (light `#486b68`, dark `#84c6c1`), semantic status hues, round status balls with distinct glyphs and rubber-stamp status labels, system font stack, dark console in both themes, focus-ring token, inline-SVG mark, motion budget, Never list.
 - Evidence: palette.mjs exit 0; all text pairs ≥5.17:1, console ≥7.7:1, status balls ≥3:1 both themes; detector 0 tells. Independent review PASS (Minors only).
