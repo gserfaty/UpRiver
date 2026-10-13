@@ -1,0 +1,263 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>UpRiver Build #12 (failed) - styled</title>
+<!-- Tokens: DESIGN.md (River Ledger), pasted verbatim. Light/dark follow the OS. -->
+<style>
+:root {
+  color-scheme: light dark;
+  /* neutral ramp (light) — palette.mjs seed 190 muted */
+  --neutral-1: #fcfdfd; --neutral-2: #f7f9f9; --neutral-3: #eef1f1; --neutral-4: #e4e9e9;
+  --neutral-5: #d8e0df; --neutral-6: #cbd4d4; --neutral-7: #bbc6c5; --neutral-8: #a1aead;
+  --neutral-9: #abbbba; --neutral-10: #99a8a7; --neutral-11: #5d6564; --neutral-12: #2a2f2e;
+  /* accent ramp (light) — the ONE brand color */
+  --accent-1: #fafefd; --accent-2: #f4fafa; --accent-3: #e6f4f3; --accent-4: #d8edeb;
+  --accent-5: #c9e5e2; --accent-6: #b7dbd8; --accent-7: #a2ceca; --accent-8: #82b7b2;
+  --accent-9: #84c6c1; --accent-10: #74b2ad; --accent-11: #486b68; --accent-12: #203230;
+  --accent-on-solid: #04100f;
+  /* functional (light) — palette.mjs seed 190 balanced */
+  --error-3: #ffebe9; --error-9: #e1524f; --error-11: #974843;
+  --success-3: #e0f8e0; --success-9: #5ad664; --success-11: #337437;
+  --warning-3: #f9f0dd; --warning-9: #dbb155; --warning-11: #76602f;
+  --info-3: #e3f3ff; --info-9: #5baee5; --info-11: #3d6886;
+
+  /* semantic: surfaces + text */
+  --bg: var(--neutral-3);            /* page ground, top bar */
+  --surface: var(--neutral-1);       /* panels */
+  --sunken: var(--neutral-2);        /* selected stage cell, hover rows */
+  --rule: var(--neutral-7);          /* ledger hairlines (decorative) */
+  --rule-strong: var(--neutral-11);  /* input/control boundaries (>=3:1) */
+  --text: var(--neutral-12);
+  --text-2: var(--neutral-11);
+  /* semantic: the accent */
+  --accent-solid: var(--accent-11);  /* primary button fill */
+  --on-accent: var(--neutral-1);
+  --accent-text: var(--accent-11);   /* links */
+  --accent-subtle: var(--accent-3);  /* current sidebar item */
+  --mark-tile: var(--accent-11); --mark-ink: var(--neutral-1);
+  /* focus */
+  --focus-ring: var(--accent-11); --focus-ring-width: 2px; --focus-ring-offset: 2px;
+  /* status */
+  --st-passed: var(--success-11);  --st-passed-text: var(--success-11);
+  --st-failed: var(--error-9);     --st-failed-text: var(--error-11); --st-failed-bg: var(--error-3);
+  --st-running: #226a95;           --st-running-text: #226a95; /* vivid-run info-11, see Status set */
+  --st-aborted: var(--neutral-12); --st-aborted-text: var(--neutral-12);
+  --st-idle: var(--neutral-11);    --st-idle-text: var(--neutral-11);
+  --st-glyph: var(--surface);
+  /* console — dark in both themes (dark-ramp hexes, verbatim) */
+  --con-bg: #191a1a; --con-text: #e3e9e9; --con-gutter: #b0bab9; --con-rule: #424b4a;
+  --con-err-bg: #331a18; --con-err-text: #f49c95; --con-err-mark: #e1524f;
+  --con-hit-bg: #dbb155; --con-hit-text: #191a1a;
+  --ansi-red: #f49c95; --ansi-green: #88cb8a; --ansi-yellow: #cdb482; --ansi-blue: #90bedf; --ansi-cyan: #9ac0bd;
+
+  /* type */
+  --font-ui: system-ui, -apple-system, "Segoe UI", "Helvetica Neue", sans-serif;
+  --font-data: ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  --text-xs: 11px; --text-sm: 12px; --text-base: 13px; --text-lg: 15px;
+  --text-xl: 17px; --text-2xl: 20px; --text-3xl: 24px; --text-4xl: 28px;
+  --leading: 1.45; --leading-tight: 1.2; --leading-log: 1.5;
+  --numeric: tabular-nums;
+  /* space, shape */
+  --sp-1: 2px; --sp-2: 4px; --sp-3: 8px; --sp-4: 12px; --sp-5: 16px; --sp-6: 24px; --sp-7: 32px;
+  --radius: 0; --radius-control: 2px; --rule-w: 1px;
+  --shadow-overlay: 0 6px 16px rgb(32 50 48 / .18); /* menus + dialogs only, accent-12 tinted */
+  /* motion */
+  --dur-fast: 120ms; --dur: 200ms; --ease: cubic-bezier(.2, 0, 0, 1); --spin: 1.1s;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --neutral-1: #121313; --neutral-2: #191a1a; --neutral-3: #202322; --neutral-4: #272b2b;
+    --neutral-5: #2e3433; --neutral-6: #363e3d; --neutral-7: #424b4a; --neutral-8: #576362;
+    --neutral-9: #abbbba; --neutral-10: #bfcecd; --neutral-11: #b0bab9; --neutral-12: #e3e9e9;
+    --accent-1: #111313; --accent-2: #161a1a; --accent-3: #1a2424; --accent-4: #1d2e2c;
+    --accent-5: #203736; --accent-6: #234240; --accent-7: #29514e; --accent-8: #386b67;
+    --accent-9: #84c6c1; --accent-10: #9ad9d4; --accent-11: #9ac0bd; --accent-12: #d7edeb;
+    --accent-on-solid: #04100f;
+    --error-3: #331a18; --error-9: #e1524f; --error-11: #f49c95;
+    --success-3: #152715; --success-9: #5ad664; --success-11: #88cb8a;
+    --warning-3: #282113; --warning-9: #dbb155; --warning-11: #cdb482;
+    --info-3: #17242d; --info-9: #5baee5; --info-11: #90bedf;
+
+    --bg: var(--neutral-1); --surface: var(--neutral-2); --sunken: var(--neutral-3);
+    --rule: var(--neutral-7); --rule-strong: var(--neutral-11);
+    --text: var(--neutral-12); --text-2: var(--neutral-11);
+    --accent-solid: var(--accent-9); --on-accent: var(--accent-on-solid);
+    --accent-text: var(--accent-11); --accent-subtle: var(--accent-3);
+    --mark-tile: var(--accent-9); --mark-ink: var(--accent-on-solid);
+    --focus-ring: var(--accent-9);
+    --st-passed: var(--success-9);   --st-passed-text: var(--success-11);
+    --st-failed: var(--error-9);     --st-failed-text: var(--error-11); --st-failed-bg: var(--error-3);
+    --st-running: var(--info-9);     --st-running-text: var(--info-11);
+    --st-aborted: var(--neutral-12); --st-aborted-text: var(--neutral-12);
+    --st-idle: var(--neutral-11);    --st-idle-text: var(--neutral-11);
+    --st-glyph: var(--surface);
+    --shadow-overlay: 0 6px 16px rgb(0 0 0 / .5);
+  }
+}
+@media (max-width: 700px) {
+  :root { --text-xs: 12px; --text-sm: 12px; --text-base: 14px; }
+}
+/* ---- components (styled mock; tokens above are DESIGN.md verbatim) ---- */
+*{box-sizing:border-box}
+body{margin:0;font:var(--text-base)/var(--leading) var(--font-ui);background:var(--bg);color:var(--text)}
+.num{font-variant-numeric:var(--numeric)}
+.data{font-family:var(--font-data);font-size:var(--text-sm)}
+a{color:var(--accent-text);text-underline-offset:2px}
+a:not(:hover){text-decoration:none}
+:focus-visible{outline:var(--focus-ring-width) solid var(--focus-ring);outline-offset:var(--focus-ring-offset)}
+.skip{position:absolute;left:-999px}.skip:focus{left:8px;top:8px;background:var(--surface);padding:4px 8px;z-index:2}
+svg{display:block;flex:none}
+/* top bar */
+.top{display:flex;gap:var(--sp-5);align-items:center;padding:var(--sp-3) var(--sp-5);background:var(--surface);border-bottom:var(--rule-w) solid var(--rule);color:var(--mark-tile)}
+.brand{display:flex;gap:var(--sp-3);align-items:center;font-weight:700;font-size:var(--text-lg);letter-spacing:.01em;color:var(--text);text-decoration:none}
+.crumbs{color:var(--text-2);display:flex;gap:6px;align-items:center;min-width:0}
+.user{margin-left:auto;color:var(--text-2)}
+/* layout */
+.layout{display:grid;grid-template-columns:200px minmax(0,1fr);gap:var(--sp-5);padding:var(--sp-5);max-width:1200px;margin:auto}
+nav.side{min-width:0}
+nav.side ul{list-style:none;margin:0;padding:0;background:var(--surface);border:var(--rule-w) solid var(--rule)}
+nav.side a{display:flex;align-items:center;gap:var(--sp-3);min-height:36px;padding:0 var(--sp-4);color:var(--text);border-bottom:var(--rule-w) solid var(--rule);border-left:3px solid transparent;transition:background var(--dur-fast) var(--ease)}
+nav.side a:hover{background:var(--sunken)}
+nav.side li:last-child a{border-bottom:0}
+nav.side a[aria-current]{background:var(--accent-subtle);border-left-color:var(--accent-solid);font-weight:600}
+nav.side a[aria-disabled=true]{color:var(--text-2);cursor:not-allowed}
+nav.side a[aria-disabled=true] small{margin-left:auto;font-size:var(--text-xs)}
+nav.side .sep{height:var(--sp-3);background:var(--bg);border-bottom:var(--rule-w) solid var(--rule)}
+.ic{width:16px;text-align:center;color:var(--text-2);font-family:var(--font-data);font-size:var(--text-xs)}
+main{min-width:0;display:grid;grid-template-columns:minmax(0,1fr);gap:var(--sp-5)}
+section,header.bh{background:var(--surface);border:var(--rule-w) solid var(--rule);padding:var(--sp-4) var(--sp-5)}
+h1{font-size:var(--text-2xl);line-height:var(--leading-tight);margin:0;display:flex;flex-wrap:wrap;align-items:center;gap:10px}
+h2{font-size:var(--text-xs);text-transform:uppercase;letter-spacing:.06em;color:var(--text-2);margin:0 0 var(--sp-4);font-weight:700}
+/* signature: status stamps */
+.stamp{display:inline-block;font:700 var(--text-xs)/1 var(--font-ui);letter-spacing:.08em;text-transform:uppercase;padding:3px 6px;border:1.5px solid currentColor;border-radius:0}
+.s-passed{color:var(--st-passed-text)}.s-failed{color:var(--st-failed-text)}.s-running{color:var(--st-running-text)}.s-aborted{color:var(--st-aborted-text)}.s-idle{color:var(--st-idle-text)}
+.stxt{font-size:var(--text-xs);letter-spacing:.08em;text-transform:uppercase}
+/* balls */
+.ball{width:16px;height:16px}.ball.lg{width:20px;height:20px}
+.spin{transform-origin:8px 8px;animation:spin var(--spin) linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+/* header */
+.hd{display:flex;flex-wrap:wrap;gap:var(--sp-4);align-items:flex-start;justify-content:space-between}
+.cta{display:grid;justify-items:end;gap:var(--sp-2)}
+.cta small{color:var(--text-2);font-size:var(--text-sm)}
+.sum{margin:var(--sp-3) 0 var(--sp-4);font-weight:600;color:var(--st-failed-text)}
+dl{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:var(--sp-3) var(--sp-5);margin:0;padding-top:var(--sp-4);border-top:var(--rule-w) solid var(--rule)}
+dt{color:var(--text-2);font-size:var(--text-xs);text-transform:uppercase;letter-spacing:.06em}
+dd{margin:0}
+/* buttons */
+button,.btn{min-height:32px;padding:0 var(--sp-4);border:var(--rule-w) solid var(--rule-strong);border-radius:var(--radius-control);background:var(--surface);color:var(--text);font:inherit;cursor:pointer;display:inline-flex;align-items:center;gap:6px;transition:background var(--dur-fast) var(--ease)}
+button:hover{background:var(--sunken)}
+.btn.primary{background:var(--accent-solid);border-color:var(--accent-solid);color:var(--on-accent);font-weight:700;min-height:36px;padding:0 var(--sp-5)}
+.btn.primary:hover{background:var(--accent-solid);filter:brightness(1.08)}
+/* stage view */
+.stages{display:flex;padding-right:1px}
+.st{flex:1 1 0;min-width:120px;border:var(--rule-w) solid var(--rule);border-radius:0;margin-right:-1px;padding:var(--sp-3) var(--sp-4);display:grid;gap:var(--sp-2);justify-items:start;background:var(--surface);text-align:left;min-height:0;border-top:3px solid var(--rule)}
+.st .row{display:flex;gap:var(--sp-3);align-items:center;font-weight:600}
+.st small{color:var(--text-2);font-size:var(--text-sm);display:flex;gap:var(--sp-3);align-items:center}
+.st[aria-pressed=true]{background:var(--sunken);box-shadow:inset 0 0 0 2px var(--text)}
+.st.failed{background:var(--st-failed-bg);border-top-color:var(--st-failed)}
+.st.failed[aria-pressed=true]{box-shadow:inset 0 0 0 2px var(--st-failed-text)}
+/* console */
+.logbar{display:flex;flex-wrap:wrap;gap:var(--sp-3);align-items:center;margin-bottom:var(--sp-3)}
+.logbar input[type=search]{flex:1 1 180px;min-height:32px;padding:0 var(--sp-3);border:var(--rule-w) solid var(--rule-strong);border-radius:var(--radius-control);background:var(--surface);color:var(--text);font:inherit}
+.logbar label{display:flex;gap:6px;align-items:center;min-height:32px}
+pre{margin:0;border:var(--rule-w) solid var(--con-rule);background:var(--con-bg);color:var(--con-text);font:var(--text-sm)/var(--leading-log) var(--font-data);overflow:auto;max-height:320px;padding:var(--sp-3) 0}
+pre span{display:block;padding-right:var(--sp-4);white-space:pre;border-left:3px solid transparent}
+pre span:before{content:attr(data-n);display:inline-block;width:44px;margin-right:10px;padding-right:var(--sp-3);text-align:right;color:var(--con-gutter);border-right:var(--rule-w) solid var(--con-rule);font-variant-numeric:var(--numeric)}
+pre .err{background:var(--con-err-bg);color:var(--con-err-text);border-left-color:var(--con-err-mark)}
+pre .ok{color:var(--ansi-green)} pre .cmd{color:var(--ansi-cyan)}
+pre mark{background:var(--con-hit-bg);color:var(--con-hit-text)}
+/* artifacts */
+.art{margin:0;padding:0}
+.art li{display:flex;justify-content:space-between;align-items:center;gap:var(--sp-3);min-height:36px;border-bottom:var(--rule-w) solid var(--rule);list-style:none}
+.art li:last-child{border-bottom:0}
+.art small{color:var(--text-2)}
+/* specimen (design review only) */
+.spec{display:grid;gap:var(--sp-4)}
+.spec .line{display:flex;flex-wrap:wrap;gap:var(--sp-5);align-items:center}
+.spec .cell{display:flex;gap:var(--sp-3);align-items:center}
+.spec .lbl{color:var(--text-2);font-size:var(--text-xs);width:84px}
+.mono-mark{color:var(--text)}
+@media(max-width:700px){
+ .layout{grid-template-columns:minmax(0,1fr);padding:var(--sp-4) var(--sp-5)}
+ nav.side ul{display:flex;overflow-x:auto} nav.side a{min-height:44px;white-space:nowrap;border:0;border-right:var(--rule-w) solid var(--rule);border-bottom:3px solid transparent} nav.side a[aria-current]{border-bottom-color:var(--accent-solid)} nav.side .sep{display:none}
+ .stages{flex-direction:column} .st{flex:none;margin:0 0 -1px;min-height:44px}
+ .top{flex-wrap:wrap}
+ button,.btn,.logbar input{min-height:44px} .cta{justify-items:stretch;width:100%} .btn.primary{justify-content:center}
+}
+@media(prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style></head><body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+ <symbol id="b-passed" viewBox="0 0 16 16"><circle cx="8" cy="8" r="8" fill="var(--st-passed)"/><path d="M4.6 8.3l2.2 2.2 4.6-4.8" stroke="var(--st-glyph)" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+ <symbol id="b-failed" viewBox="0 0 16 16"><circle cx="8" cy="8" r="8" fill="var(--st-failed)"/><path d="M5.3 5.3l5.4 5.4M10.7 5.3l-5.4 5.4" stroke="var(--st-glyph)" stroke-width="2" stroke-linecap="round"/></symbol>
+ <symbol id="b-running" viewBox="0 0 16 16"><circle cx="8" cy="8" r="8" fill="var(--st-running)"/><path class="spin" d="M8 4.2A3.8 3.8 0 1 1 4.2 8" stroke="var(--st-glyph)" stroke-width="2" fill="none" stroke-linecap="round"/></symbol>
+ <symbol id="b-aborted" viewBox="0 0 16 16"><circle cx="8" cy="8" r="8" fill="var(--st-aborted)"/><rect x="5.25" y="5.25" width="5.5" height="5.5" fill="var(--st-glyph)"/></symbol>
+ <symbol id="b-skipped" viewBox="0 0 16 16"><circle cx="8" cy="8" r="7" fill="none" stroke="var(--st-idle)" stroke-width="1.5" stroke-dasharray="2.2 2"/><path d="M5 8h6" stroke="var(--st-idle)" stroke-width="2" stroke-linecap="round"/></symbol>
+ <symbol id="b-queued" viewBox="0 0 16 16"><circle cx="8" cy="8" r="7" fill="none" stroke="var(--st-idle)" stroke-width="1.5"/></symbol>
+ <symbol id="mark" viewBox="0 0 32 32"><rect width="32" height="32" rx="6" fill="var(--mark-tile)"/><path d="M9 27C9 19 23 21 23 13V8" fill="none" stroke="var(--mark-ink)" stroke-width="3.5" stroke-linecap="round"/><path d="M18 12l5-5 5 5" fill="none" stroke="var(--mark-ink)" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+ <symbol id="mark-mono" viewBox="0 0 32 32"><path d="M9 27C9 19 23 21 23 13V8M18 12l5-5 5 5" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+ <filter id="protan" color-interpolation-filters="linearRGB"><feColorMatrix type="matrix" values="0.152286 1.052583 -0.204868 0 0  0.114503 0.786281 0.099216 0 0  -0.003882 -0.048116 1.051998 0 0  0 0 0 1 0"/></filter>
+ <filter id="deutan" color-interpolation-filters="linearRGB"><feColorMatrix type="matrix" values="0.367322 0.860646 -0.227968 0 0  0.280085 0.672501 0.047413 0 0  -0.011820 0.042940 0.968881 0 0  0 0 0 1 0"/></filter>
+</svg>
+<a class="skip" href="#main">Skip to content</a>
+<div class="top">
+ <a class="brand" href="#"><svg width="20" height="20" role="img" aria-label="UpRiver"><use href="#mark"/></svg>UpRiver</a>
+ <nav class="crumbs" aria-label="Breadcrumb"><a href="#">Dashboard</a>›<a href="#">demo</a>›<span class="num" aria-current="page">#12</span></nav>
+ <span class="user">alice ▾</span>
+</div>
+<div class="layout">
+<nav class="side" aria-label="Build"><ul>
+ <li><a href="#" aria-current="page"><span class="ic">&gt;_</span>Console</a></li>
+ <li><a href="#"><span class="ic">▤</span>Artifacts <span class="num">(2)</span></a></li>
+ <li><a aria-disabled="true"><span class="ic">■</span>Abort <small>Not running</small></a></li>
+ <li><a href="#"><span class="ic">⇄</span>Compare…</a></li>
+ <li class="sep" aria-hidden="true"></li>
+ <li><a href="#"><span class="ic">←</span>Previous build&nbsp;<span class="num">#11</span></a></li>
+ <li><a aria-disabled="true"><span class="ic">→</span>Next build <small>No later build</small></a></li>
+</ul></nav>
+<main id="main">
+<header class="bh">
+ <div class="hd">
+  <h1><svg class="ball lg" aria-hidden="true"><use href="#b-failed"/></svg><span class="num">Build #12</span><span class="stamp s-failed">Failed</span></h1>
+  <div class="cta"><button class="btn primary">⟳ Rebuild</button><small>Reuses params, stages, <span class="data">files@v7</span> as in <span class="num">#12</span></small></div>
+ </div>
+ <p class="sum">fvt failed · exit 1</p>
+ <dl>
+  <div><dt>Triggered by</dt><dd>alice</dd></div>
+  <div><dt>Config</dt><dd>nightly</dd></div>
+  <div><dt>Duration</dt><dd class="num">2m 41s</dd></div>
+  <div><dt>Params</dt><dd class="data">ENV=staging, RETRIES=2</dd></div>
+  <div><dt>Files</dt><dd><span class="num">3</span> files · <span class="data">app.zip@v7, tests.zip@v4</span> …</dd></div>
+ </dl>
+</header>
+<section aria-label="Stages"><h2>Stages</h2>
+<div class="stages">
+ <button class="st" aria-pressed="false"><span class="row"><svg class="ball" aria-hidden="true"><use href="#b-passed"/></svg>bvt</span><small><b class="stxt s-passed">Passed</b><span class="num">0:38</span></small></button>
+ <button class="st failed" aria-pressed="true"><span class="row"><svg class="ball" aria-hidden="true"><use href="#b-failed"/></svg>fvt</span><small><b class="stxt s-failed">Failed</b>exit 1 · <span class="num">2:03</span></small></button>
+ <button class="st" aria-pressed="false"><span class="row"><svg class="ball" aria-hidden="true"><use href="#b-skipped"/></svg>smoke</span><small><b class="stxt s-idle">Skipped</b><span class="num">—</span></small></button>
+</div></section>
+<section aria-label="Console output"><h2>Console output · fvt</h2>
+<div class="logbar"><input type="search" placeholder="Search log  ( / )" aria-label="Search log" value="503"><label><input type="checkbox"> Follow <span class="data">(f)</span></label><button>Jump to first error</button><button>Copy</button><button>Download log</button></div>
+<pre tabindex="0" aria-label="Log for stage fvt"><span data-n="1" class="cmd">$ ./run_fvt.sh --env staging</span><span data-n="2">[fvt] collecting tests… 48 found</span><span data-n="3">[fvt] test_login ........ <b class="ok">ok</b></span><span data-n="4">[fvt] test_upload ....... <b class="ok">ok</b></span><span data-n="5" class="err">[fvt] test_download ..... FAILED</span><span data-n="6" class="err">[fvt] test_retry ........ FAILED</span><span data-n="7" class="err">AssertionError: expected 200, got <mark>503</mark> (retry 2/2)</span><span data-n="8">[fvt] 46 passed, 2 failed</span><span data-n="9" class="err">exit code 1</span></pre></section>
+<section aria-label="Artifacts"><h2>Artifacts</h2>
+<ul class="art"><li><span><span class="data">fvt-report.xml</span> <small class="num">12 KB</small></span><button>Download</button></li><li><span><span class="data">logs.tar.gz</span> <small class="num">340 KB</small></span><button>Download</button></li></ul></section>
+<section class="spec" aria-label="Design specimen"><h2>Specimen · not part of the page</h2>
+ <div class="line"><span class="lbl">Mark</span>
+  <svg width="16" height="16" role="img" aria-label="UpRiver 16px"><use href="#mark"/></svg>
+  <svg width="20" height="20" role="img" aria-label="UpRiver 20px"><use href="#mark"/></svg>
+  <svg width="32" height="32" role="img" aria-label="UpRiver 32px"><use href="#mark"/></svg>
+  <span class="mono-mark cell"><svg width="16" height="16" aria-hidden="true"><use href="#mark-mono"/></svg><svg width="32" height="32" aria-hidden="true"><use href="#mark-mono"/></svg> mono</span></div>
+ <div class="line" id="statusrow"><span class="lbl">Status</span>
+  <span class="cell"><svg class="ball" aria-hidden="true"><use href="#b-passed"/></svg><span class="stamp s-passed">Passed</span></span>
+  <span class="cell"><svg class="ball" aria-hidden="true"><use href="#b-failed"/></svg><span class="stamp s-failed">Failed</span></span>
+  <span class="cell"><svg class="ball" aria-hidden="true"><use href="#b-running"/></svg><span class="stamp s-running">Running</span></span>
+  <span class="cell"><svg class="ball" aria-hidden="true"><use href="#b-aborted"/></svg><span class="stamp s-aborted">Aborted</span></span>
+  <span class="cell"><svg class="ball" aria-hidden="true"><use href="#b-skipped"/></svg><span class="stamp s-idle">Skipped</span></span>
+  <span class="cell"><svg class="ball" aria-hidden="true"><use href="#b-queued"/></svg><span class="stamp s-idle">Queued</span></span>
+  <a href="#">link</a><button class="btn primary">Primary</button></div>
+ <div class="line" style="filter:url(#protan)"><span class="lbl">Protanopia</span>
+  <svg class="ball" aria-hidden="true"><use href="#b-passed"/></svg><svg class="ball" aria-hidden="true"><use href="#b-failed"/></svg><svg class="ball" aria-hidden="true"><use href="#b-running"/></svg><svg class="ball" aria-hidden="true"><use href="#b-aborted"/></svg><svg class="ball" aria-hidden="true"><use href="#b-skipped"/></svg><svg class="ball" aria-hidden="true"><use href="#b-queued"/></svg><button class="btn primary">Primary</button></div>
+ <div class="line" style="filter:url(#deutan)"><span class="lbl">Deuteranopia</span>
+  <svg class="ball" aria-hidden="true"><use href="#b-passed"/></svg><svg class="ball" aria-hidden="true"><use href="#b-failed"/></svg><svg class="ball" aria-hidden="true"><use href="#b-running"/></svg><svg class="ball" aria-hidden="true"><use href="#b-aborted"/></svg><svg class="ball" aria-hidden="true"><use href="#b-skipped"/></svg><svg class="ball" aria-hidden="true"><use href="#b-queued"/></svg><button class="btn primary">Primary</button></div>
+ <div class="line"><span class="lbl">Type</span><span style="font-size:var(--text-4xl)">4xl</span><span style="font-size:var(--text-3xl)">3xl</span><span style="font-size:var(--text-2xl)">2xl</span><span style="font-size:var(--text-xl)">xl</span><span style="font-size:var(--text-lg)">lg</span><span>base</span><span style="font-size:var(--text-sm)">sm</span><span style="font-size:var(--text-xs)">xs</span><span class="num">1:11:08 · 0:38</span></div>
+</section>
+</main></div></body></html>

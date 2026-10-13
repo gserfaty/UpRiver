@@ -1,5 +1,10 @@
 # Changelog
 
+## Design phase 2: DNA, type and color (proposed, awaiting lock)
+- `DESIGN.md` "River Ledger": greyscale UI plus one muted river-teal accent (light `#486b68`, dark `#84c6c1`), semantic status hues, round status balls with distinct glyphs and rubber-stamp status labels, system font stack, dark console in both themes, focus-ring token, inline-SVG mark, motion budget, Never list.
+- Evidence: palette.mjs exit 0; all text pairs ≥5.17:1, console ≥7.7:1, status balls ≥3:1 both themes; detector 0 tells. Independent review PASS (Minors only).
+- Styled Build mock + light/dark screenshots in `.design-foundations/mocks/`.
+
 ## Design phase 1: journey and page specs
 - `JOURNEY.md`: job story, journey (trigger → watch → fail → diagnose → re-run/compare), IA (route map incl. `#/b/{id}/s/{seq}`, `#/c/{a}/{b}`, `#/signin`; breadcrumbs; sidebar actions per context), flows F1–F7, and page specs (purpose, entry points, blocks, states, CTA, exit) for Dashboard, Pipeline, Build, Compare, Sign-in.
 - Key rules: failed stage auto-focused unless the user picked a stage (then a "View log" banner); Follow never moves off a failed stage; unsaved Run-panel edits kept per pipeline with "Modified" + "Reset to saved"; leave/sign-out confirms on unsaved edits; admin actions disabled with a reason for team-only users; every empty state has a next step; 360px layouts per page; `/` focuses log search, `f` toggles Follow.
