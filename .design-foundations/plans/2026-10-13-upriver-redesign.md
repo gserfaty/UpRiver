@@ -5,7 +5,7 @@
 - **Track:** Full · **Entry stage:** Discover (neither `DESIGN.md` nor `JOURNEY.md` exists)
 - **Phases:** 3 · **DAG:** 1 → 2 → 3
 - **Gates:** `JOURNEY.md ## Page specs` before any Design page work; `DESIGN.md` locked before tokens, design system, or styled mocks
-- **Status:** draft, not committed
+- **Status:** in-progress · **Started:** 2026-10-13 · **Current Phase:** 1
 
 ## Context
 
@@ -109,6 +109,7 @@ Discover first. `JOURNEY.md` fixes the jobs, the information architecture (sideb
 - **Dense, not airy:** compact rows, small-but-legible type, information over decoration.
 - **Self-contained and plain:** system fonts, inline SVG, no dependencies; modernized, not trendy (no glassmorphism, no illustrations).
 - **Brand direction (to invent):** a simple mark suggesting an upward flow or river bend; restrained palette led by a cool blue/teal accent so the status colors keep their meaning.
+- **User pin from mock sign-off (2026-10-13):** the approved greyscale wireframe gets exactly ONE non-greyscale brand color (the accent). Everything else stays greyscale; only the semantic status hues are added on top. Layout follows `.design-foundations/mocks/build-page-failed.html` (approved).
 
 **Edge cases:**
 - The accent and the running status are both blue. They must be distinguishable by hue or lightness, and running always carries its glyph.
@@ -190,3 +191,5 @@ Discover first. `JOURNEY.md` fixes the jobs, the information architecture (sideb
 ---
 
 After build: implementation into `upriver/static/` by developer + critic agents (outside this plugin's scope).
+
+## Execution log
