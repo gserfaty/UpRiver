@@ -1,5 +1,12 @@
 # Changelog
 
+## UI redesign: shell, sign-in, Build page
+- Design work (research, journey, tokens, mocks) was done locally and is not in the repo; only the resulting UI is committed.
+- New app shell: tokens ("River Ledger", light/dark, system fonts), top bar with mark, breadcrumbs and user menu (Edit credentials, Sign out), per-context sidebar (horizontal bar under 44em), skip link, `#/signin` first-run page replacing the header inputs, Not-found page for unknown routes, in-app `<dialog>` confirms (Abort, Remove file, Delete config).
+- Build page (`#/b/{id}`, `#/b/{id}/s/{seq}`): status ball and stamp, failure summary line linking to the log, Rebuild (same params, stages and file versions) and Rebuild with current files, Abort with confirm, Stage View grid, line-numbered console (search with count, Follow, Jump to first error, Copy, Download, Wrap, Full height; 100k lines render in chunks), failed stage auto-focused unless you picked one (then a banner), Previous/Next build, artifacts. `/` focuses search and `f` toggles Follow (ignored while typing).
+- Dashboard and Pipeline pages restyled with the same components; behavior unchanged.
+- Not yet: Compare page, dashboard filter/trend strip, structured Settings editor, Run-panel unsaved-edit tracking, ANSI colors (escapes are stripped).
+
 ## Keep design/planner artifacts local
 - `.design-foundations/`, `JOURNEY.md` and `DESIGN.md` are no longer tracked and are now gitignored (they stay on disk as working files for the redesign).
 
