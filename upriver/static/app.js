@@ -31,6 +31,7 @@ function svgUse(cls, id) { // icons and status balls come from the sprite in ind
 const ico = (n) => svgUse("ico", "i-" + n);
 const BALLS = ["passed", "failed", "running", "aborted", "skipped"];
 const ball = (s, lg) => svgUse("ball" + (lg ? " lg" : ""), "b-" + (BALLS.includes(s) ? s : "queued"));
+const secs = (a, b) => (ts(a) ? Math.max(0, ((b ? ts(b) : new Date()) - ts(a)) / 1000) : 0);
 const statusCls = (s) => (["passed", "failed", "running", "aborted"].includes(s) ? s : "idle");
 const label = (s) => (s ? s[0].toUpperCase() + s.slice(1) : "Unknown");
 const badge = (s) => el("span", { class: "bdg stxt s-" + statusCls(s) }, ball(s), label(s));
@@ -274,14 +275,26 @@ async function listPage(view) {
   setCrumbs(["Dashboard"]);
   document.title = "Dashboard · UpRiver";
   const list = await api("GET", "/pipelines");
-  const tbody = el("tbody"), none = el("p", { class: "muted", role: "status" });
+  const cells = new Map(), tbody = el("tbody"), none = el("p", { class: "muted", role: "status" });
   const q = el("input", { type: "search", placeholder: "Name contains...", "aria-label": "Filter pipelines", autocomplete: "off" });
+  const trend = (pid, cell) => api("GET", `/pipelines/${pid}/builds?limit=20`).then((bs) => {
+    bs = bs.slice().reverse(); // oldest left
+    const mx = Math.max(1, ...bs.map((b) => secs(b.started_at, b.finished_at)));
+    const n = {};
+    bs.forEach((b) => { n[b.status] = (n[b.status] || 0) + 1; });
+    const g = el("span", { class: "trend", role: "group", "aria-label": `Last ${bs.length} builds: ` + Object.entries(n).map(([k, v]) => v + " " + k).join(", ") },
+      ...bs.map((b) => el("span", { class: "tb s-" + statusCls(b.status), title: `#${b.number} ${label(b.status)} ${dur(b.started_at, b.finished_at)}` },
+        el("i", { style: `height:${Math.max(3, Math.round((24 * secs(b.started_at, b.finished_at)) / mx))}px` }), ball(b.status))));
+    cell.replaceChildren(bs.length ? g : "");
+  }).catch(() => cell.replaceChildren(el("span", { class: "muted" }, "Trend unavailable")));
   const draw = () => {
     const f = q.value.trim().toLowerCase(), rows = list.filter((p) => p.name.toLowerCase().includes(f));
     tbody.replaceChildren(...rows.map((p) => el("tr", {},
       el("td", {}, el("a", { href: "#/p/" + p.id }, p.name)),
       el("td", {}, p.description),
-      el("td", {}, p.last_build_status ? badge(p.last_build_status) : el("span", { class: "muted" }, "No builds")))));
+      el("td", {}, p.last_build_status ? badge(p.last_build_status) : el("span", { class: "muted" }, "No builds")),
+      cells.get(p.id) || (cells.set(p.id, el("td")), // ponytail: N+1 requests (one per row), fine for a small team; add a list-level endpoint if pipelines grow
+        p.last_build_status && trend(p.id, cells.get(p.id)), cells.get(p.id))))); 
     none.replaceChildren(...(rows.length ? [] : [`No pipeline matches "${q.value.trim()}" `, btn("Clear filter", () => { q.value = ""; draw(); q.focus(); }, "quiet")]));
   };
   q.addEventListener("input", draw);
@@ -299,7 +312,7 @@ async function listPage(view) {
     el("h1", {}, "Pipelines ", el("span", { class: "count" }, list.length + (list.length === 1 ? " pipeline" : " pipelines"))),
     list.length
       ? el("div", {}, el("div", { class: "bar" }, q), el("div", { class: "wrap" }, el("table", {},
-        el("thead", {}, el("tr", {}, el("th", {}, "Name"), el("th", {}, "Description"), el("th", {}, "Last build"))), tbody)), none)
+        el("thead", {}, el("tr", {}, el("th", {}, "Name"), el("th", {}, "Description"), el("th", {}, "Last build"), el("th", {}, "Trend"))), tbody)), none)
       : el("p", { class: "muted" }, "No pipelines yet. Create the first pipeline to start uploading files and building.")),
   newSec);
 }

@@ -1,5 +1,8 @@
 # Changelog
 
+## 2026-10-14 20:13 — Dashboard trend strip
+- Each dashboard row shows the last 20 builds (oldest left): bar height = duration on a zero baseline, status glyph under each bar, group label like "Last 20 builds: 7 passed, 2 failed". Loaded lazily per row (`GET /api/pipelines/{id}/builds?limit=20`); shows "Trend unavailable" if that fails.
+
 ## 2026-10-14 20:13 — Dashboard pipeline filter
 - Dashboard has a "Filter pipelines" box (name contains, case-insensitive, live, client-side); no match shows `No pipeline matches "x"` with Clear filter.
 
@@ -8,7 +11,7 @@
 - New app shell: tokens ("River Ledger", light/dark, system fonts), top bar with mark, breadcrumbs and user menu (Edit credentials, Sign out), per-context sidebar (horizontal bar under 44em), skip link, `#/signin` first-run page replacing the header inputs, Not-found page for unknown routes, in-app `<dialog>` confirms (Abort, Remove file, Delete config).
 - Build page (`#/b/{id}`, `#/b/{id}/s/{seq}`): status ball and stamp, failure summary line linking to the log, Rebuild (same params, stages and file versions) and Rebuild with current files, Abort with confirm, Stage View grid, line-numbered console (search with count, Follow, Jump to first error, Copy, Download, Wrap, Full height; 100k lines render in chunks), failed stage auto-focused unless you picked one (then a banner), Previous/Next build, artifacts. `/` focuses search and `f` toggles Follow (ignored while typing).
 - Dashboard and Pipeline pages restyled with the same components; behavior unchanged.
-- Not yet: Compare page, dashboard trend strip, structured Settings editor, Run-panel unsaved-edit tracking, ANSI colors (escapes are stripped).
+- Not yet: Compare page, structured Settings editor, Run-panel unsaved-edit tracking, ANSI colors (escapes are stripped).
 
 ## Keep design/planner artifacts local
 - `.design-foundations/`, `JOURNEY.md` and `DESIGN.md` are no longer tracked and are now gitignored (they stay on disk as working files for the redesign).

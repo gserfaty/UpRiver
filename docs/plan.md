@@ -180,7 +180,7 @@ Upload handling (trust boundary):
 
 ## UI (static/index.html + app.js, hash-routed, untrusted text via textContent)
 1. **Sign-in bar:** name, team token, optional admin token in localStorage; forced on first visit. Downloads via fetch → blob URL.
-2. **#/ pipelines:** name, description, last build badge, live name filter. "New pipeline" (admin) JSON textarea.
+2. **#/ pipelines:** name, description, last build badge, live name filter, trend strip (last 20 builds, lazy per-row fetch). "New pipeline" (admin) JSON textarea.
 3. **#/p/{id}:** Files (current set, upload with "extract zips", per-path history with pin checkbox, remove); Run (config dropdown, params, stage checkboxes, Build now, Save as config); Builds history; Settings (admin JSON editor).
 4. **#/b/{id}:** header, abort button, stages with status/duration, live log `<pre>` via offset polling 1.5 s, build polled 2 s, artifacts downloads.
 
