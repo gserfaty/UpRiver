@@ -220,6 +220,7 @@ function route() {
   const page = h === "#/" ? listPage(view)
     : (m = h.match(/^#\/p\/(\d+)$/)) ? pipelinePage(view, +m[1])
     : (m = h.match(/^#\/b\/(\d+)(?:\/s\/(\d+))?$/)) ? buildPage(view, +m[1], m[2] == null ? null : +m[2])
+    : (m = h.match(/^#\/c\/(\d+)\/(\d+)$/)) ? comparePage(view, +m[1], +m[2])
     : notFound(view);
   page.catch((e) => view.prepend(errBanner(e)));
 }
@@ -517,7 +518,8 @@ async function pipelinePage(view, pid) {
         } catch (e) { throw new Error(`Can't rebuild #${b.number}. ${e.message}`); }
       } finally { rebuilding = false; }
     }) }, ico("rebuild"), "Rebuild");
-    return el("td", { class: "ract" }, go, hint, err);
+    const prev = builds.find((x) => x.number === b.number - 1);
+    return el("td", { class: "ract" }, go, prev ? el("a", { class: "btn quiet", href: `#/c/${prev.id}/${b.id}` }, ico("compare"), "Compare with previous") : null, hint, err);
   };
   const drawBuilds = () => {
     const f = bq.value.trim().toLowerCase();
@@ -564,6 +566,75 @@ async function pipelinePage(view, pid) {
     auth.admin ? sideItem("gear", "Settings", { onclick: () => jump(setSec) }) : sideItem("gear", "Settings", { off: "Admin token required" }),
   ]);
   await loadFiles();
+}
+
+// ---- #/c/{a}/{b} compare ----
+async function comparePage(view, a, b) {
+  setCrumbs(["Dashboard", "#/"], [`Compare #${a} and #${b}`]);
+  document.title = `Compare ${a} and ${b} · UpRiver`;
+  const got = await Promise.allSettled([api("GET", "/builds/" + a), api("GET", "/builds/" + b)]);
+  const miss = [a, b].filter((id, i) => got[i].status === "rejected" && /^404/.test(got[i].reason.message));
+  if (miss.length) { // E12
+    setSide(null);
+    view.append(el("section", {}, el("h1", {}, "Compare"), ...miss.map((id) => el("div", { class: "banner error", role: "alert" }, `Build ${id} not found. It may have been removed, or the link is mistyped.`, el("a", { href: "#/" }, "Go to Dashboard")))));
+    return;
+  }
+  for (const g of got) if (g.status === "rejected") throw g.reason;
+  const [x, y] = got.map((g) => g.value);
+  const flat = (v) => (v == null ? "—" : String(v));
+  const tbl = (heads, rows) => el("div", { class: "wrap" }, el("table", {}, el("thead", {}, el("tr", {}, ...heads.map((t) => el("th", {}, t)))),
+    el("tbody", {}, ...rows.map((r) => el("tr", {}, ...r.map((c) => el("td", { class: "data" }, c)))))));
+  // params
+  const pn = [...new Set([...Object.keys(x.params), ...Object.keys(y.params)])].sort();
+  const pRows = pn.map((k) => [k, flat(x.params[k]), flat(y.params[k]), x.params[k] === y.params[k]]);
+  const pDiff = pRows.filter((r) => !r[3]);
+  // files by path
+  const fx = new Map(x.files.map((f) => [f.path, f])), fy = new Map(y.files.map((f) => [f.path, f]));
+  const fRows = [];
+  for (const pth of [...new Set([...fx.keys(), ...fy.keys()])].sort()) {
+    const l = fx.get(pth), r = fy.get(pth);
+    if (l && r && l.sha256 === r.sha256 && l.version === r.version) continue;
+    fRows.push([pth, l ? "v" + l.version : "—", r ? "v" + r.version : "—", !l ? "added" : !r ? "removed" : "changed"]);
+  }
+  // stages matched by name
+  const runs = (z) => new Map(z.stage_runs.map((s) => [s.name, s]));
+  const rx = runs(x), ry = runs(y), defs = (z) => new Map(z.stages.map((s) => [s.name, JSON.stringify(s)]));
+  const dx = defs(x), dy = defs(y), sNames = [...new Set([...rx.keys(), ...ry.keys(), ...dx.keys(), ...dy.keys()])];
+  const desc = (r) => (r ? label(r.status) + (r.exit_code != null ? " (exit " + r.exit_code + ")" : "") + (r.started_at ? " " + dur(r.started_at, r.finished_at) : "") : "");
+  let firstDiff = null;
+  const sRows = sNames.map((n) => {
+    const l = rx.get(n), r = ry.get(n);
+    const only = !l && !dx.has(n) ? `only in #${y.number}` : !r && !dy.has(n) ? `only in #${x.number}` : "";
+    const changed = only || !l || !r || l.status !== r.status || l.exit_code !== r.exit_code || dx.get(n) !== dy.get(n);
+    if (changed && !firstDiff && l && r) firstDiff = r;
+    return [n, desc(l) || "—", desc(r) || "—", only || (changed ? "differs" : "same")];
+  });
+  const sDiff = sRows.filter((r) => r[3] !== "same").length;
+  const total = pDiff.length + fRows.length + sDiff;
+  const bar = el("div", { class: "bar" });
+  if (firstDiff) bar.append(btn("Open first differing stage log", () => { location.hash = `#/b/${y.id}/s/${firstDiff.seq}`; }, "primary", "console"));
+  const hidden = pRows.length - pDiff.length;
+  const pBody = el("div"), showUn = el("button", { type: "button", class: "btn quiet" });
+  let all = false;
+  const drawP = () => {
+    pBody.replaceChildren(tbl(["Param", "#" + x.number, "#" + y.number], (all ? pRows : pDiff).map((r) => r.slice(0, 3))));
+    showUn.textContent = all ? "Hide unchanged" : `Show ${hidden} unchanged`;
+  };
+  showUn.addEventListener("click", () => { all = !all; drawP(); });
+  drawP();
+  const sec = (t, ...k) => el("section", {}, el("h2", {}, t), ...k);
+  const fact = (name, f) => [name, f(x), f(y)];
+  setSide(`Compare #${x.number} and #${y.number}`, [
+    sideItem("compare", "Swap sides", { onclick: () => { location.hash = `#/c/${y.id}/${x.id}`; } }),
+    sideItem("console", "Build #" + x.number, { href: "#/b/" + x.id }), sideItem("console", "Build #" + y.number, { href: "#/b/" + y.id })]);
+  view.append(el("section", {}, el("h1", {}, `Compare #${x.number} and #${y.number}`),
+    x.pipeline_id !== y.pipeline_id ? el("div", { class: "banner info" }, "These builds belong to different pipelines. Params, files and stages may not be comparable.") : null,
+    el("p", { role: "status" }, total ? `${total} difference${total === 1 ? "" : "s"}: ${pDiff.length} param${pDiff.length === 1 ? "" : "s"}, ${fRows.length} file${fRows.length === 1 ? "" : "s"}, ${sDiff} stage${sDiff === 1 ? "" : "s"}.` : "No differences."), bar),
+    sec("Params", pBody, pRows.length && hidden ? showUn : null),
+    sec("Files", fRows.length ? tbl(["File", "#" + x.number, "#" + y.number, "Change"], fRows) : el("p", { class: "muted" }, "Same files and versions.")),
+    sec("Stages", sRows.length ? tbl(["Stage", "#" + x.number, "#" + y.number, "Change"], sRows) : el("p", { class: "muted" }, "No stages.")),
+    sec("Facts", tbl(["", "#" + x.number, "#" + y.number], [fact("Status", (z) => label(z.status)), fact("Triggered by", (z) => z.triggered_by), fact("Config", (z) => z.config_name || "—"),
+      fact("Created", (z) => when(z.created_at)), fact("Duration", (z) => dur(z.started_at, z.finished_at) || "—")])));
 }
 
 // ---- #/b/{id} and #/b/{id}/s/{seq} build ----
@@ -824,7 +895,7 @@ async function buildPage(view, bid, seqArg) {
       sideItem("console", "Console", { current: true, onclick: () => jump(consoleSec) }),
       sideItem("box", "Artifacts" + (arts ? ` (${arts.length})` : ""), { onclick: () => jump(artSec) }),
       active() ? sideItem("stop", "Abort", { onclick: abortDlg }) : sideItem("stop", "Abort", { off: "Not running" }),
-      sideItem("compare", "Compare…", { off: "Not available yet" }),
+      p ? sideItem("compare", `Compare with #${p.number}…`, { href: `#/c/${p.id}/${build.id}` }) : sideItem("compare", "Compare…", { off: "No earlier build" }),
       sideItem("", "", { sep: true }),
       p ? sideItem("prev", "Previous build #" + p.number, { href: "#/b/" + p.id }) : sideItem("prev", "Previous build", { off: "No earlier build" }),
       n ? sideItem("next", "Next build #" + n.number, { href: "#/b/" + n.id }) : sideItem("next", "Next build", { off: "No later build" }),
