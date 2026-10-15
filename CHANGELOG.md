@@ -1,5 +1,8 @@
 # Changelog
 
+## 2026-10-14 20:15 — Round 2 review fixes (steps 1–4)
+- Builds: Load more no longer vanishes after a failed fetch (the limit is committed only on success) and ignores a second click while a fetch is in flight; Rebuild ignores a second click while one is in flight (filter re-renders create fresh buttons).
+
 ## 2026-10-14 20:15 — Per-row Rebuild
 - Each Builds row has Rebuild: reads the build, then starts a new one with the same params, stages and file versions and opens it (no dialog). The reuse is disclosed on hover/keyboard focus and in the button's description; a 400 is shown in the row.
 

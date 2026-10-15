@@ -450,7 +450,7 @@ async function pipelinePage(view, pid) {
       }))), runErr);
 
   // Builds: filters are client-side over the fetched page; Load more refetches with a bigger limit
-  let builds = [], limit = 50;
+  let builds = [], limit = 50, loadingMore = false, rebuilding = false;
   const bt = el("tbody"), bnone = el("p", { class: "muted", role: "status" }), more = el("div", { class: "bar" });
   const st = el("select", { "aria-label": "Filter by status" }, el("option", { value: "" }, "All statuses"),
     ...["passed", "failed", "running", "queued", "aborted"].map((v) => el("option", { value: v }, label(v))));
@@ -458,11 +458,15 @@ async function pipelinePage(view, pid) {
   const rebuildCell = (b) => { // same request as the Build page's Rebuild: params, stages and file versions of #N
     const msg = `Rebuild #${b.number}: reuses params, stages, files@vN as in #${b.number}`, hint = el("span", { class: "hint", id: "rb" + b.id }, msg), err = el("div");
     const go = el("button", { type: "button", class: "btn quiet", title: msg, "aria-describedby": hint.id, onclick: action(err, async () => {
-      const d = await api("GET", "/builds/" + b.id);
+      if (rebuilding) return; // filter re-renders create fresh buttons; allow one rebuild in flight
+      rebuilding = true;
       try {
-        const nb = await api("POST", `/pipelines/${pid}/builds`, { json: { config_id: null, params: d.params, stages: d.stages.map((x) => x.name), upload_ids: d.files.map((f) => f.upload_id) } });
-        location.hash = "#/b/" + nb.id;
-      } catch (e) { throw new Error(`Can't rebuild #${b.number}. ${e.message}`); }
+        const d = await api("GET", "/builds/" + b.id);
+        try {
+          const nb = await api("POST", `/pipelines/${pid}/builds`, { json: { config_id: null, params: d.params, stages: d.stages.map((x) => x.name), upload_ids: d.files.map((f) => f.upload_id) } });
+          location.hash = "#/b/" + nb.id;
+        } catch (e) { throw new Error(`Can't rebuild #${b.number}. ${e.message}`); }
+      } finally { rebuilding = false; }
     }) }, ico("rebuild"), "Rebuild");
     return el("td", { class: "ract" }, go, hint, err);
   };
@@ -474,8 +478,13 @@ async function pipelinePage(view, pid) {
       el("td", {}, b.config_name || ""), el("td", {}, b.triggered_by), el("td", {}, when(b.created_at)), el("td", { class: "num" }, dur(b.started_at, b.finished_at)), rebuildCell(b))));
     bnone.replaceChildren(...(rows.length ? [] : ["No builds match this filter ", btn("Clear filter", () => { st.value = ""; bq.value = ""; drawBuilds(); }, "quiet")]));
     more.replaceChildren(...(builds.length >= limit && limit < 500 ? [btn("Load more", action(bnone, async () => {
-      limit = Math.min(500, limit * 2);
-      builds = await api("GET", `/pipelines/${pid}/builds?limit=${limit}`); // ponytail: refetches the whole list; add offset paging if 500 is not enough
+      if (loadingMore) return; // filter changes re-render this button mid-fetch; one request at a time
+      loadingMore = true;
+      try {
+        const next = Math.min(500, limit * 2); // commit the new limit only on success so a retry still shows Load more
+        builds = await api("GET", `/pipelines/${pid}/builds?limit=${next}`);
+        limit = next;
+      } finally { loadingMore = false; } // ponytail: refetches the whole list; add offset paging if 500 is not enough
       drawBuilds();
     }))] : []));
   };
