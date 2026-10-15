@@ -171,14 +171,21 @@ $("skip").addEventListener("click", (ev) => { ev.preventDefault(); $("main").foc
 // Unsaved-edit guard: pages set `dirty` (returns a message or "") while they hold edits that a navigation or sign-out would lose.
 let dirty = null;
 window.addEventListener("beforeunload", (ev) => { if (dirty && dirty()) { ev.preventDefault(); ev.returnValue = ""; } });
+function runMods() { // pipelines with unsaved Run-panel edits in this tab (sessionStorage upriver.run.*)
+  let n = 0;
+  try { for (let i = 0; i < sessionStorage.length; i++) { const k = sessionStorage.key(i); if (k.startsWith("upriver.run.") && JSON.parse(sessionStorage.getItem(k)).mod) n++; } } catch (e) { /* ignore */ }
+  return n;
+}
 function signOut() {
-  const d = dirty && dirty();
-  if (d) { // one prompt for everything that would be lost; dirty is cleared so route() doesn't ask again
-    return confirmDlg({ title: "Sign out and discard unsaved changes?", body: d, safe: "Stay signed in", danger: "Sign out", busy: "Signing out…", run: async () => { dirty = null; doSignOut(); } });
+  const d = dirty && dirty(), n = runMods(), rm = n ? `Run panel edits for ${n} pipeline${n === 1 ? "" : "s"} will be lost.` : "";
+  if (d || rm) { // one prompt for everything that would be lost; dirty is cleared so route() doesn't ask again
+    return confirmDlg({ title: d ? "Sign out and discard unsaved changes?" : "Sign out and discard unsaved run changes?", body: [d, rm].filter(Boolean).join(" "), safe: "Stay signed in", danger: "Sign out", busy: "Signing out…", run: async () => { dirty = null; doSignOut(); } });
   }
   doSignOut();
 }
 function doSignOut() {
+  // ponytail: sessionStorage is per tab, so signing out here cannot clear another tab's run edits
+  try { for (const k of Object.keys(sessionStorage)) if (k.startsWith("upriver.run.")) sessionStorage.removeItem(k); } catch (e) { /* ignore */ }
   for (const k of ["user", "token", "admin"]) { store.set("upriver." + k, ""); auth[k] = ""; }
   renderUser();
   route();
@@ -562,7 +569,7 @@ async function pipelinePage(view, pid) {
 
   // Run
   const runErr = el("div"), pinInfo = el("span", { class: "muted" });
-  const updatePins = () => { pinInfo.textContent = pins.size ? `${pins.size} pinned version(s)` : ""; };
+  let updatePins = () => {}; // replaced below once the run panel exists
   const cfgSel = el("select", { "aria-label": "Config" });
   const paramBox = el("div", { class: "bar" }), stageBox = el("div", { class: "bar" }), cfgName = el("input", { placeholder: "Config name", "aria-label": "Config name", maxLength: 64 });
   const paramIn = {}, stageCb = {};
@@ -586,17 +593,51 @@ async function pipelinePage(view, pid) {
   const fillConfigs = () => {
     cfgSel.replaceChildren(el("option", { value: "" }, "(defaults)"), ...cfgs.map((c) => el("option", { value: c.id }, c.name)));
   };
-  cfgSel.addEventListener("change", () => {
+  const applyCfg = () => { // set the panel to the selected saved config (or the defaults)
     const c = cfgs.find((x) => String(x.id) === cfgSel.value);
     for (const p of pipe.config.params) paramIn[p.name].value = c && p.name in c.params ? c.params[p.name] : p.default;
     for (const s in stageCb) stageCb[s].checked = !c || c.stages.includes(s);
     cfgName.value = c ? c.name : "";
-  });
+  };
   fillConfigs();
   const values = () => ({
     params: Object.fromEntries(Object.entries(paramIn).map(([k, i]) => [k, i.value])),
     stages: Object.keys(stageCb).filter((s) => stageCb[s].checked),
   });
+  // Unsaved-edit tracking: the baseline is the selected saved config, or the defaults. Pins are persisted but not counted as edits
+  // (ponytail: their checkboxes live in the file history and can't be reset from here).
+  const baseOf = (sel) => {
+    const c = cfgs.find((x) => String(x.id) === String(sel));
+    return { params: Object.fromEntries(pipe.config.params.map((p) => [p.name, c && p.name in c.params ? c.params[p.name] : p.default])),
+      stages: pipe.config.stages.map((x) => x.name).filter((n) => !c || c.stages.includes(n)) };
+  };
+  const changedAgainst = (sel) => {
+    const b = baseOf(sel), v = values();
+    return { params: Object.keys(v.params).filter((k) => v.params[k] !== b.params[k]), stages: Object.keys(stageCb).filter((k) => stageCb[k].checked !== b.stages.includes(k)) };
+  };
+  const isMod = (sel) => { const d = changedAgainst(sel); return d.params.length + d.stages.length > 0; };
+  const runKey = "upriver.run." + pid, modMark = el("span", { class: "chip", role: "status" }), resetBtn = btn("Reset to saved", () => { applyCfg(); updateMod(); }, "quiet", "rebuild");
+  let prevSel = "", shownMod = null, sideRender = () => {};
+  const updateMod = () => {
+    const d = changedAgainst(cfgSel.value), mod = d.params.length + d.stages.length > 0;
+    for (const k in paramIn) paramIn[k].parentNode.classList.toggle("mod", d.params.includes(k));
+    for (const k in stageCb) stageCb[k].parentNode.classList.toggle("mod", d.stages.includes(k));
+    modMark.textContent = mod ? "Modified" : ""; resetBtn.hidden = !mod;
+    buildNow.lastChild.textContent = mod ? "Build with unsaved changes" : "Build now";
+    if (mod !== shownMod) { shownMod = mod; sideRender(); }
+    try { sessionStorage.setItem(runKey, JSON.stringify({ cfg: cfgSel.value, ...values(), pins: [...pins], mod })); } catch (e) { /* private mode: not persisted */ }
+  };
+  updatePins = () => { pinInfo.textContent = pins.size ? `${pins.size} pinned version(s)` : ""; updateMod(); };
+  cfgSel.addEventListener("change", () => {
+    const next = cfgSel.value, c = cfgs.find((x) => String(x.id) === next);
+    const go = () => { cfgSel.value = next; prevSel = next; applyCfg(); updateMod(); };
+    if (isMod(prevSel)) {
+      cfgSel.value = prevSel; // Keep my edits is the default: the select snaps back until the user confirms
+      confirmDlg({ title: `Switch to config ${c ? c.name : "(defaults)"}?`, body: "Your unsaved run changes will be replaced by the saved values.",
+        safe: "Keep my edits", danger: "Discard edits and switch", busy: "Switching…", run: async () => go() });
+    } else go();
+  });
+  for (const b of [paramBox, stageBox]) { b.addEventListener("input", updateMod); b.addEventListener("change", updateMod); }
   const buildNow = btn("Build now", action(runErr, async () => {
     const v = values();
     if (!v.stages.length) throw new Error("No stage is selected. Tick at least one stage, then build again.");
@@ -614,18 +655,18 @@ async function pipelinePage(view, pid) {
           run: async () => {
             await api("DELETE", "/configs/" + c.id);
             cfgs = await api("GET", `/pipelines/${pid}/configs`);
-            fillConfigs();
+            fillConfigs(); prevSel = cfgSel.value; updateMod();
           } });
       }, "danger")),
     paramBox, el("fieldset", {}, el("legend", {}, "Stages"), stageBox),
-    el("div", { class: "bar" }, buildNow, pinInfo, cfgName,
+    el("div", { class: "bar" }, buildNow, modMark, resetBtn, pinInfo, cfgName,
       btn("Save as config", action(runErr, async () => {
         const v = values();
         if (!cfgName.value.trim()) throw new Error("Name the config. Enter a name so you can pick this config later.");
         const c = await api("POST", `/pipelines/${pid}/configs`, { json: { name: cfgName.value.trim(), ...v } });
         cfgs = await api("GET", `/pipelines/${pid}/configs`);
         fillConfigs();
-        cfgSel.value = c.id;
+        cfgSel.value = c.id; prevSel = cfgSel.value; updateMod();
         note(runErr, "Saved config " + c.name + ".");
       }))), runErr);
 
@@ -680,19 +721,31 @@ async function pipelinePage(view, pid) {
   // Settings
   const editor = configEditor({ description: pipe.description, config: pipe.config }, { readOnly: !auth.admin,
     save: (json) => api("PUT", "/pipelines/" + pid, { json, admin: true }),
-    onSaved: (r) => { pipe.config = r.config; pipe.description = r.description; drawRun(); cfgSel.dispatchEvent(new Event("change")); } });
+    onSaved: (r) => { pipe.config = r.config; pipe.description = r.description; drawRun(); applyCfg(); updateMod(); } });
   if (view.isConnected) dirty = () => (editor.isDirty() ? "Your edits to this pipeline's settings have not been saved." : "");
   const setSec = sec("Settings (admin)", editor.node);
 
   view.append(filesSec, runSec, buildsSec, setSec);
-  setSide("Pipeline " + pipe.name, [
-    sideItem("play", "Build now", { onclick: () => buildNow.click() }),
+  sideRender = () => setSide("Pipeline " + pipe.name, [
+    sideItem("play", shownMod ? "Build with unsaved changes" : "Build now", { onclick: () => buildNow.click() }),
     sideItem("list", "Builds", { onclick: () => jump(buildsSec) }),
     sideItem("box", "Files", { onclick: () => jump(filesSec) }),
     sideItem("rebuild", "Run", { onclick: () => jump(runSec) }),
     sideItem("copy", "Configs", { onclick: () => jump(runSec) }),
     auth.admin ? sideItem("gear", "Settings", { onclick: () => jump(setSec) }) : sideItem("gear", "Settings", { off: "Admin token required" }),
   ]);
+  // restore this tab's unsaved run edits (sessionStorage), then show the Modified state
+  try {
+    const r = JSON.parse(sessionStorage.getItem(runKey) || "null");
+    if (r) {
+      if (cfgs.some((c) => String(c.id) === r.cfg)) cfgSel.value = r.cfg;
+      prevSel = cfgSel.value; applyCfg();
+      for (const k in paramIn) if (k in (r.params || {}) && (paramIn[k].tagName !== "SELECT" || [...paramIn[k].options].some((o) => o.value === r.params[k]))) paramIn[k].value = r.params[k];
+      if (r.stages) for (const k in stageCb) stageCb[k].checked = r.stages.includes(k);
+      for (const [path, id] of r.pins || []) pins.set(path, id);
+    }
+  } catch (e) { /* bad stored state: start from the saved config */ }
+  updatePins();
   await loadFiles();
 }
 

@@ -181,7 +181,7 @@ Upload handling (trust boundary):
 ## UI (static/index.html + app.js, hash-routed, untrusted text via textContent)
 1. **Sign-in bar:** name, team token, optional admin token in localStorage; forced on first visit. Downloads via fetch → blob URL.
 2. **#/ pipelines:** name, description, last build badge, live name filter, trend strip (last 20 builds, lazy per-row fetch). "New pipeline" (admin) JSON textarea.
-3. **#/p/{id}:** Files (current set, dropzone upload with progress and result list, with "extract zips", per-path history with pin checkbox, remove); Run (config dropdown, params, stage checkboxes, Build now, Save as config); Builds history (status filter, text search, Load more to 500); Settings (admin structured editor + raw JSON; read-only for team token).
+3. **#/p/{id}:** Files (current set, dropzone upload with progress and result list, with "extract zips", per-path history with pin checkbox, remove); Run (config dropdown, params, stage checkboxes, Build now, Save as config; unsaved edits kept in sessionStorage with Modified/Reset); Builds history (status filter, text search, Load more to 500); Settings (admin structured editor + raw JSON; read-only for team token).
 4. **#/c/{a}/{b}:** compare two builds (params, files, stages, facts; swap; first differing stage log).
 5. **#/b/{id}:** header, abort button, stages with status/duration, live log `<pre>` via offset polling 1.5 s, build polled 2 s, artifacts downloads.
 
@@ -202,7 +202,7 @@ Acceptance: demo passes / FORCE_FAIL fails; per-pipeline numbering; stop vs cont
 Tests: test_demo_build_passes_and_fails, test_build_numbers, test_on_fail_stop_vs_continue, test_timeout, test_params_as_env_no_injection, test_snapshot_and_pin, test_log_offset, test_abort_running, test_abort_queued, test_artifacts_and_traversal, test_auto_build_on_upload, test_startup_recovery.
 
 ### Phase 4: UI
-Manual checklist: sign-in persists; dashboard filter narrows rows and Clear filter restores; upload files + zip; run "quick" with live log; Rebuild on a history row starts an identical build; #/c/1/2 renders and a bad id shows "Build N not found"; FORCE_FAIL fails; abort; download manifest.txt; save config; team-token Settings shows a disabled Save ("Admin token required"); a new stage saved in Settings appears in Run; unsaved Settings prompt on navigation; `<img onerror>` in a log renders as text.
+Manual checklist: sign-in persists; Run edits survive navigation and show Modified, sign-out asks only when Modified; dashboard filter narrows rows and Clear filter restores; upload files + zip; run "quick" with live log; Rebuild on a history row starts an identical build; #/c/1/2 renders and a bad id shows "Build N not found"; FORCE_FAIL fails; abort; download manifest.txt; save config; team-token Settings shows a disabled Save ("Admin token required"); a new stage saved in Settings appears in Run; unsaved Settings prompt on navigation; `<img onerror>` in a log renders as text.
 Test: test_index_served.
 
 ## Deliberately skipped (add when needed)
