@@ -1,5 +1,8 @@
 # Changelog
 
+## 2026-10-14 20:22 — Structured Settings editor
+- Pipeline Settings is now a form (description, auto-build, params with choices, stages with kind, command, timeout, on-fail; add/remove) with inline validation that mirrors the server rules. "Advanced: raw JSON" stays in sync both ways; invalid JSON blocks Save with a "Line n: ..." message. Save uses the existing PUT and refreshes the Run panel without a reload; a server 422 is shown inline. Team-only users see it read-only with "Admin token required". Unsaved edits show a marker and prompt on navigation (Stay / Leave without saving), on sign-out, and on closing the tab. The New pipeline box on the dashboard is still raw JSON.
+
 ## 2026-10-14 20:18 — Compare page
 - New `#/c/{a}/{b}`: verdict line ("No differences." or counts), params table (changed only, "Show N unchanged"), files changed/added/removed, stages matched by name ("only in #N"), facts, Swap sides, banner for builds of different pipelines, "Open first differing stage log", and "Build {id} not found" for a bad id. Build page sidebar "Compare with #N…" (previous build) and a "Compare with previous" action on each history row.
 
@@ -26,7 +29,7 @@
 - New app shell: tokens ("River Ledger", light/dark, system fonts), top bar with mark, breadcrumbs and user menu (Edit credentials, Sign out), per-context sidebar (horizontal bar under 44em), skip link, `#/signin` first-run page replacing the header inputs, Not-found page for unknown routes, in-app `<dialog>` confirms (Abort, Remove file, Delete config).
 - Build page (`#/b/{id}`, `#/b/{id}/s/{seq}`): status ball and stamp, failure summary line linking to the log, Rebuild (same params, stages and file versions) and Rebuild with current files, Abort with confirm, Stage View grid, line-numbered console (search with count, Follow, Jump to first error, Copy, Download, Wrap, Full height; 100k lines render in chunks), failed stage auto-focused unless you picked one (then a banner), Previous/Next build, artifacts. `/` focuses search and `f` toggles Follow (ignored while typing).
 - Dashboard and Pipeline pages restyled with the same components; behavior unchanged.
-- Not yet: structured Settings editor, Run-panel unsaved-edit tracking, ANSI colors (escapes are stripped).
+- Not yet: Run-panel unsaved-edit tracking, ANSI colors (escapes are stripped).
 
 ## Keep design/planner artifacts local
 - `.design-foundations/`, `JOURNEY.md` and `DESIGN.md` are no longer tracked and are now gitignored (they stay on disk as working files for the redesign).

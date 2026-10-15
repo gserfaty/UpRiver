@@ -168,7 +168,17 @@ function renderUser() {
 document.addEventListener("click", (ev) => { const d = $("user").firstChild; if (d && !d.contains(ev.target)) d.open = false; });
 document.addEventListener("keydown", (ev) => { const d = $("user").firstChild; if (ev.key === "Escape" && d && d.open) { d.open = false; d.firstChild.focus(); } });
 $("skip").addEventListener("click", (ev) => { ev.preventDefault(); $("main").focus(); });
+// Unsaved-edit guard: pages set `dirty` (returns a message or "") while they hold edits that a navigation or sign-out would lose.
+let dirty = null;
+window.addEventListener("beforeunload", (ev) => { if (dirty && dirty()) { ev.preventDefault(); ev.returnValue = ""; } });
 function signOut() {
+  const d = dirty && dirty();
+  if (d) { // one prompt for everything that would be lost; dirty is cleared so route() doesn't ask again
+    return confirmDlg({ title: "Sign out and discard unsaved changes?", body: d, safe: "Stay signed in", danger: "Sign out", busy: "Signing out…", run: async () => { dirty = null; doSignOut(); } });
+  }
+  doSignOut();
+}
+function doSignOut() {
   for (const k of ["user", "token", "admin"]) { store.set("upriver." + k, ""); auth[k] = ""; }
   renderUser();
   route();
@@ -210,7 +220,15 @@ function jump(sec) { // scroll a section into view and move focus to its heading
 
 // ---- router ----
 let ret = "#/"; // where to go after sign-in
+let curHash = location.hash || "#/";
 function route() {
+  const h0 = location.hash || "#/", d = dirty && dirty();
+  if (d && h0 !== curHash) { // leave guard: undo the navigation, ask first
+    history.replaceState(null, "", curHash);
+    return confirmDlg({ title: "Leave without saving?", body: d, safe: "Stay", danger: "Leave without saving", busy: "Leaving…", run: async () => { dirty = null; location.hash = h0; } });
+  }
+  dirty = null;
+  curHash = h0;
   const view = el("div", { class: "pg" }); // fresh per navigation: a slow page from the previous route renders into a detached node
   $("view").replaceChildren(view);
   const h = location.hash || "#/";
@@ -337,6 +355,114 @@ async function listPage(view) {
   newSec);
 }
 
+// ---- structured pipeline settings editor (also edits the same JSON the PUT accepts) ----
+const NAME_RE = /^[A-Za-z0-9_.-]{1,64}$/, PARAM_RE = /^[A-Z_][A-Z0-9_]{0,63}$/, KINDS = ["bvt", "fvt", "smoke", "regression", "custom"];
+// Client checks mirror the pydantic models in app.py; the server stays authoritative and its 422 detail is shown on Save.
+function cfgModel(j) {
+  const c = (j && j.config) || {};
+  return { description: (j && j.description) || "", auto_build: !!c.auto_build,
+    params: (c.params || []).map((p) => ({ name: p.name ?? "", default: p.default ?? "", choices: Array.isArray(p.choices) ? p.choices : null })),
+    stages: (c.stages || []).map((x) => ({ name: x.name ?? "", kind: x.kind ?? "bvt", command: x.command ?? "", timeout_s: x.timeout_s ?? 120, on_fail: x.on_fail ?? "stop" })) };
+}
+const cfgJSON = (m) => ({ description: m.description, config: { auto_build: m.auto_build,
+  params: m.params.map((p) => ({ name: p.name, default: p.default, ...(p.choices ? { choices: p.choices } : {}) })),
+  stages: m.stages.map((x) => ({ name: x.name, kind: x.kind, command: x.command, timeout_s: x.timeout_s === "" ? "" : Number(x.timeout_s), on_fail: x.on_fail })) } });
+function cfgErrors(m) {
+  const e = new Map(), seen = (arr, key, k) => { const names = new Set(); arr.forEach((x, i) => { if (names.has(x.name)) e.set(`${k}${i}.name`, "Duplicate name. Names must be unique."); names.add(x.name); }); };
+  m.params.forEach((p, i) => {
+    if (!PARAM_RE.test(p.name)) e.set(`p${i}.name`, "Use A-Z, 0-9 and _, starting with a letter or _ (max 64).");
+    if (p.default.length > 1024) e.set(`p${i}.default`, "At most 1024 characters.");
+    else if (p.choices && !p.choices.includes(p.default)) e.set(`p${i}.default`, "Default must be one of the choices.");
+  });
+  seen(m.params, "name", "p");
+  if (!m.stages.length) e.set("stages", "Add at least one stage.");
+  m.stages.forEach((x, i) => {
+    if (!NAME_RE.test(x.name)) e.set(`s${i}.name`, "Use letters, digits, . _ - (1-64 characters).");
+    if (!KINDS.includes(x.kind)) e.set(`s${i}.kind`, "Pick a kind.");
+    if (!x.command) e.set(`s${i}.command`, "Enter a command.");
+    const t = Number(x.timeout_s);
+    if (x.timeout_s === "" || !Number.isInteger(t) || t < 1 || t > 86400) e.set(`s${i}.timeout_s`, "Whole seconds, 1 to 86400.");
+    if (!["stop", "continue"].includes(x.on_fail)) e.set(`s${i}.on_fail`, "Stop or continue.");
+  });
+  seen(m.stages, "name", "s");
+  return e;
+}
+function syntaxMsg(src, e) { // "Line n: ..." from a JSON.parse error
+  let n = 1, m = /line (\d+)/.exec(e.message), pos = /position (\d+)/.exec(e.message);
+  if (m) n = +m[1]; else if (pos) n = src.slice(0, +pos[1]).split("\n").length;
+  return `Line ${n}: ${e.message}`;
+}
+function prettyDetail(e) { // "422 [{loc,msg}]" -> "stages.0.name: msg"
+  const m = /^422 (\[.*\])$/s.exec(e.message);
+  if (!m) return e.message;
+  try { return "The server rejected the settings. " + JSON.parse(m[1]).map((d) => (d.loc || []).filter((x) => x !== "body").join(".") + ": " + d.msg).join("; "); } catch (x) { return e.message; }
+}
+// Returns {node, isDirty(), saved(json)}; `save(json)` does the PUT and returns the saved pipeline.
+function configEditor(init, { readOnly, save, onSaved }) {
+  let m = cfgModel(init), base = JSON.stringify(cfgJSON(m)), rawErr = "", saving = false;
+  const spans = new Map(), msg = el("div"), flag = el("span", { class: "muted", role: "status" });
+  const raw = el("textarea", { spellcheck: false, "aria-label": "pipeline settings JSON", readOnly });
+  const rawNote = el("div"), form = el("div"), details = el("details", {}, el("summary", {}, "Advanced: raw JSON"), raw, rawNote);
+  const saveBtn = btn("Save", () => doSave(), "primary"), why = el("span", { class: "muted" }, readOnly ? "Admin token required" : "");
+  const errSpan = (k) => { const s = el("span", { class: "ferr s-failed" }); spans.set(k, s); return s; };
+  const check = () => {
+    const e = cfgErrors(m);
+    for (const [k, sp] of spans) sp.textContent = e.get(k) || "";
+    const bad = e.size || rawErr;
+    saveBtn.disabled = readOnly || saving || !!bad;
+    const dirtyNow = JSON.stringify(cfgJSON(m)) !== base || !!rawErr;
+    flag.textContent = dirtyNow ? "Unsaved changes" : "";
+    if (!readOnly) why.textContent = bad ? (rawErr ? "Fix the raw JSON to save" : `Fix ${e.size} problem${e.size === 1 ? "" : "s"} to save`) : "";
+  };
+  const changed = () => { raw.value = JSON.stringify(cfgJSON(m), null, 2); rawErr = ""; rawNote.replaceChildren(); check(); };
+  const field = (lbl, input, key) => el("label", { class: "fld" }, el("span", {}, lbl), input, key ? errSpan(key) : null);
+  const inp = (val, key, set, attrs = {}) => el("input", { value: val, disabled: readOnly, oninput: (ev) => { set(ev.target.value); changed(); }, ...attrs });
+  const sel = (opts, val, set) => el("select", { disabled: readOnly, onchange: (ev) => { set(ev.target.value); changed(); } }, ...opts.map((o) => el("option", { value: o, selected: o === val }, o)));
+  const rm = (arr, i) => btn("Remove", () => { arr.splice(i, 1); draw(); changed(); }, "quiet", null);
+  function draw() {
+    spans.clear();
+    const ps = m.params.map((p, i) => el("div", { class: "grp" },
+      field("Name", inp(p.name, "", (v) => { p.name = v; }, { maxLength: 64 }), `p${i}.name`),
+      field("Default", inp(p.default, "", (v) => { p.default = v; }), `p${i}.default`),
+      field("Choices (comma separated, optional)", inp(p.choices ? p.choices.join(", ") : "", "", (v) => { const c = v.split(",").map((x) => x.trim()).filter(Boolean); p.choices = c.length ? c : null; }), ""),
+      readOnly ? null : rm(m.params, i)));
+    const ss = m.stages.map((x, i) => el("div", { class: "grp" },
+      field("Name", inp(x.name, "", (v) => { x.name = v; }, { maxLength: 64 }), `s${i}.name`),
+      field("Kind", sel(KINDS, x.kind, (v) => { x.kind = v; }), `s${i}.kind`),
+      field("Command", inp(x.command, "", (v) => { x.command = v; }), `s${i}.command`),
+      field("Timeout (s)", inp(x.timeout_s, "", (v) => { x.timeout_s = v; }, { type: "number", min: 1, max: 86400 }), `s${i}.timeout_s`),
+      field("On fail", sel(["stop", "continue"], x.on_fail, (v) => { x.on_fail = v; }), `s${i}.on_fail`),
+      readOnly ? null : rm(m.stages, i)));
+    form.replaceChildren(
+      field("Description", inp(m.description, "", (v) => { m.description = v; }), ""),
+      el("label", { class: "fld" }, el("input", { type: "checkbox", checked: m.auto_build, disabled: readOnly, onchange: (ev) => { m.auto_build = ev.target.checked; changed(); } }), "Build automatically when files change"),
+      el("h3", {}, "Parameters"), ...ps, readOnly ? null : btn("Add parameter", () => { m.params.push({ name: "", default: "", choices: null }); draw(); changed(); }, "", "plus"),
+      el("h3", {}, "Stages"), errSpan("stages"), ...ss, readOnly ? null : btn("Add stage", () => { m.stages.push({ name: "", kind: "bvt", command: "", timeout_s: 120, on_fail: "stop" }); draw(); changed(); }, "", "plus"));
+  }
+  raw.addEventListener("input", () => {
+    try {
+      const j = JSON.parse(raw.value);
+      if (!j || typeof j !== "object" || Array.isArray(j) || !j.config || typeof j.config !== "object") throw new Error("expected an object with \"description\" and \"config\"");
+      m = cfgModel(j); draw(); rawErr = ""; rawNote.replaceChildren();
+    } catch (e) { rawErr = e instanceof SyntaxError ? syntaxMsg(raw.value, e) : "Line 1: " + e.message; rawNote.replaceChildren(el("div", { class: "banner error", role: "alert" }, rawErr)); }
+    check();
+  });
+  async function doSave() {
+    if (saveBtn.disabled) return;
+    saving = true; check(); msg.textContent = ""; msg.className = "";
+    try {
+      const r = await save(cfgJSON(m));
+      m = cfgModel({ description: r.description, config: r.config }); base = JSON.stringify(cfgJSON(m));
+      draw(); raw.value = JSON.stringify(cfgJSON(m), null, 2);
+      note(msg, "Saved. New params and stages are in the Run panel.");
+      onSaved(r);
+    } catch (e) { fail(msg, new Error(prettyDetail(e))); }
+    saving = false; check();
+  }
+  draw(); raw.value = JSON.stringify(cfgJSON(m), null, 2); check();
+  return { node: el("div", {}, form, details, el("div", { class: "bar" }, saveBtn, why, flag), msg), isDirty: () => JSON.stringify(cfgJSON(m)) !== base || !!rawErr };
+}
+
 // ---- #/p/{id} pipeline ----
 async function pipelinePage(view, pid) {
   const [pipe, configs] = await Promise.all([api("GET", "/pipelines/" + pid), api("GET", `/pipelines/${pid}/configs`)]);
@@ -439,19 +565,23 @@ async function pipelinePage(view, pid) {
   const updatePins = () => { pinInfo.textContent = pins.size ? `${pins.size} pinned version(s)` : ""; };
   const cfgSel = el("select", { "aria-label": "Config" });
   const paramBox = el("div", { class: "bar" }), stageBox = el("div", { class: "bar" }), cfgName = el("input", { placeholder: "Config name", "aria-label": "Config name", maxLength: 64 });
-  const paramIn = {};
-  for (const p of pipe.config.params) {
-    paramIn[p.name] = p.choices
-      ? el("select", {}, ...p.choices.map((c) => el("option", { value: c }, c)))
-      : el("input", { maxLength: 1024 });
-    paramIn[p.name].value = p.default;
-    paramBox.append(el("label", {}, p.name + " ", paramIn[p.name]));
-  }
-  const stageCb = {};
-  for (const s of pipe.config.stages) {
-    stageCb[s.name] = el("input", { type: "checkbox", checked: true });
-    stageBox.append(el("label", {}, stageCb[s.name], s.name));
-  }
+  const paramIn = {}, stageCb = {};
+  const drawRun = () => { // also called after Settings save, so new params and stages show without a reload
+    for (const o of [paramIn, stageCb]) for (const k of Object.keys(o)) delete o[k];
+    paramBox.replaceChildren(); stageBox.replaceChildren();
+    for (const p of pipe.config.params) {
+      paramIn[p.name] = p.choices
+        ? el("select", {}, ...p.choices.map((c) => el("option", { value: c }, c)))
+        : el("input", { maxLength: 1024 });
+      paramIn[p.name].value = p.default;
+      paramBox.append(el("label", {}, p.name + " ", paramIn[p.name]));
+    }
+    for (const s of pipe.config.stages) {
+      stageCb[s.name] = el("input", { type: "checkbox", checked: true });
+      stageBox.append(el("label", {}, stageCb[s.name], s.name));
+    }
+  };
+  drawRun();
   let cfgs = configs;
   const fillConfigs = () => {
     cfgSel.replaceChildren(el("option", { value: "" }, "(defaults)"), ...cfgs.map((c) => el("option", { value: c.id }, c.name)));
@@ -548,13 +678,11 @@ async function pipelinePage(view, pid) {
     : el("p", { class: "muted" }, "No builds yet. Run the first build with Build now."));
 
   // Settings
-  const setErr = el("div");
-  const ta = el("textarea", { value: JSON.stringify({ description: pipe.description, config: pipe.config }, null, 2), spellcheck: false, "aria-label": "pipeline settings JSON" });
-  const setSec = sec("Settings (admin)", ta,
-    el("div", { class: "bar" }, btn("Save", action(setErr, async () => {
-      await api("PUT", "/pipelines/" + pid, { json: JSON.parse(ta.value), admin: true });
-      note(setErr, "Saved. Reload the page to see new parameters and stages.");
-    }), "primary")), setErr);
+  const editor = configEditor({ description: pipe.description, config: pipe.config }, { readOnly: !auth.admin,
+    save: (json) => api("PUT", "/pipelines/" + pid, { json, admin: true }),
+    onSaved: (r) => { pipe.config = r.config; pipe.description = r.description; drawRun(); cfgSel.dispatchEvent(new Event("change")); } });
+  if (view.isConnected) dirty = () => (editor.isDirty() ? "Your edits to this pipeline's settings have not been saved." : "");
+  const setSec = sec("Settings (admin)", editor.node);
 
   view.append(filesSec, runSec, buildsSec, setSec);
   setSide("Pipeline " + pipe.name, [
