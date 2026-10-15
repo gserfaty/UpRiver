@@ -15,7 +15,7 @@ API docs at http://127.0.0.1:8080/docs. Every `/api` call needs `Authorization: 
 
 ## Using the UI
 Open `http://localhost:8000/`. The first visit shows the sign-in page: enter your name and the team token (and the admin token if you create or edit pipelines); they are stored in the browser's localStorage. The user menu (top right) has Edit credentials and Sign out. A breadcrumb and a context sidebar (Dashboard, Pipeline, Build) are on every page. Then:
-- **Dashboard** (`#/`): pick a pipeline, or paste JSON under "New pipeline" (admin).
+- **Dashboard** (`#/`): filter the list by name ("Name contains..."), pick a pipeline, or paste JSON under "New pipeline" (admin).
 - **Pipeline page**: upload files (tick "Extract zip files" to unpack archives), open a file's History to pin an older version for the next build, pick a saved run config or set params and stages, then "Build now" or "Save as config". Settings edits the pipeline JSON (admin). Removing a file or deleting a config asks for confirmation.
 - **Build page** (`#/b/{id}`, or `#/b/{id}/s/{seq}` for a stage): a failed build opens on the failed stage with a summary line (stage, exit code, first error line) that jumps to the log. Click a stage to read its log; search it (`/`), toggle Follow (`f`), jump to the first error, copy or download it. Rebuild reuses the build's params, stages and file versions ("Rebuild with current files" uses the latest files). Abort asks for confirmation. Previous/Next build are in the sidebar; artifacts download when the build is done.
 

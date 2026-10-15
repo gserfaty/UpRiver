@@ -180,7 +180,7 @@ Upload handling (trust boundary):
 
 ## UI (static/index.html + app.js, hash-routed, untrusted text via textContent)
 1. **Sign-in bar:** name, team token, optional admin token in localStorage; forced on first visit. Downloads via fetch → blob URL.
-2. **#/ pipelines:** name, description, last build badge. "New pipeline" (admin) JSON textarea.
+2. **#/ pipelines:** name, description, last build badge, live name filter. "New pipeline" (admin) JSON textarea.
 3. **#/p/{id}:** Files (current set, upload with "extract zips", per-path history with pin checkbox, remove); Run (config dropdown, params, stage checkboxes, Build now, Save as config); Builds history; Settings (admin JSON editor).
 4. **#/b/{id}:** header, abort button, stages with status/duration, live log `<pre>` via offset polling 1.5 s, build polled 2 s, artifacts downloads.
 
@@ -201,7 +201,7 @@ Acceptance: demo passes / FORCE_FAIL fails; per-pipeline numbering; stop vs cont
 Tests: test_demo_build_passes_and_fails, test_build_numbers, test_on_fail_stop_vs_continue, test_timeout, test_params_as_env_no_injection, test_snapshot_and_pin, test_log_offset, test_abort_running, test_abort_queued, test_artifacts_and_traversal, test_auto_build_on_upload, test_startup_recovery.
 
 ### Phase 4: UI
-Manual checklist: sign-in persists; upload files + zip; run "quick" with live log; FORCE_FAIL fails; abort; download manifest.txt; save config; team-token Settings save shows 403; `<img onerror>` in a log renders as text.
+Manual checklist: sign-in persists; dashboard filter narrows rows and Clear filter restores; upload files + zip; run "quick" with live log; FORCE_FAIL fails; abort; download manifest.txt; save config; team-token Settings save shows 403; `<img onerror>` in a log renders as text.
 Test: test_index_served.
 
 ## Deliberately skipped (add when needed)

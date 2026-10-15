@@ -274,13 +274,18 @@ async function listPage(view) {
   setCrumbs(["Dashboard"]);
   document.title = "Dashboard · UpRiver";
   const list = await api("GET", "/pipelines");
-  const tbody = el("tbody");
-  for (const p of list) {
-    tbody.append(el("tr", {},
+  const tbody = el("tbody"), none = el("p", { class: "muted", role: "status" });
+  const q = el("input", { type: "search", placeholder: "Name contains...", "aria-label": "Filter pipelines", autocomplete: "off" });
+  const draw = () => {
+    const f = q.value.trim().toLowerCase(), rows = list.filter((p) => p.name.toLowerCase().includes(f));
+    tbody.replaceChildren(...rows.map((p) => el("tr", {},
       el("td", {}, el("a", { href: "#/p/" + p.id }, p.name)),
       el("td", {}, p.description),
-      el("td", {}, p.last_build_status ? badge(p.last_build_status) : el("span", { class: "muted" }, "No builds"))));
-  }
+      el("td", {}, p.last_build_status ? badge(p.last_build_status) : el("span", { class: "muted" }, "No builds")))));
+    none.replaceChildren(...(rows.length ? [] : [`No pipeline matches "${q.value.trim()}" `, btn("Clear filter", () => { q.value = ""; draw(); q.focus(); }, "quiet")]));
+  };
+  q.addEventListener("input", draw);
+  draw();
   const box = el("div");
   const ta = el("textarea", { value: JSON.stringify(NEW_PIPELINE, null, 2), spellcheck: false, "aria-label": "new pipeline JSON" });
   const newSec = el("section", { id: "new" }, el("h2", {}, "New pipeline (admin)"), ta,
@@ -293,8 +298,8 @@ async function listPage(view) {
   view.append(el("section", {},
     el("h1", {}, "Pipelines ", el("span", { class: "count" }, list.length + (list.length === 1 ? " pipeline" : " pipelines"))),
     list.length
-      ? el("div", { class: "wrap" }, el("table", {},
-        el("thead", {}, el("tr", {}, el("th", {}, "Name"), el("th", {}, "Description"), el("th", {}, "Last build"))), tbody))
+      ? el("div", {}, el("div", { class: "bar" }, q), el("div", { class: "wrap" }, el("table", {},
+        el("thead", {}, el("tr", {}, el("th", {}, "Name"), el("th", {}, "Description"), el("th", {}, "Last build"))), tbody)), none)
       : el("p", { class: "muted" }, "No pipelines yet. Create the first pipeline to start uploading files and building.")),
   newSec);
 }
