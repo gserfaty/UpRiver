@@ -449,15 +449,31 @@ async function pipelinePage(view, pid) {
         note(runErr, "Saved config " + c.name + ".");
       }))), runErr);
 
-  // Builds
-  const builds = await api("GET", `/pipelines/${pid}/builds`);
-  const bt = el("tbody");
-  for (const b of builds) {
-    bt.append(el("tr", {}, el("td", { class: "num" }, el("a", { href: "#/b/" + b.id }, "#" + b.number)), el("td", {}, badge(b.status)),
-      el("td", {}, b.config_name || ""), el("td", {}, b.triggered_by), el("td", {}, when(b.created_at)), el("td", { class: "num" }, dur(b.started_at, b.finished_at))));
-  }
+  // Builds: filters are client-side over the fetched page; Load more refetches with a bigger limit
+  let builds = [], limit = 50;
+  const bt = el("tbody"), bnone = el("p", { class: "muted", role: "status" }), more = el("div", { class: "bar" });
+  const st = el("select", { "aria-label": "Filter by status" }, el("option", { value: "" }, "All statuses"),
+    ...["passed", "failed", "running", "queued", "aborted"].map((v) => el("option", { value: v }, label(v))));
+  const bq = el("input", { type: "search", placeholder: "#12, user, config...", "aria-label": "Search builds", autocomplete: "off" });
+  const drawBuilds = () => {
+    const f = bq.value.trim().toLowerCase();
+    const rows = builds.filter((b) => (!st.value || b.status === st.value) &&
+      (!f || ["#" + b.number, b.triggered_by, b.config_name || "", b.status].some((t) => t.toLowerCase().includes(f))));
+    bt.replaceChildren(...rows.map((b) => el("tr", {}, el("td", { class: "num" }, el("a", { href: "#/b/" + b.id }, "#" + b.number)), el("td", {}, badge(b.status)),
+      el("td", {}, b.config_name || ""), el("td", {}, b.triggered_by), el("td", {}, when(b.created_at)), el("td", { class: "num" }, dur(b.started_at, b.finished_at)))));
+    bnone.replaceChildren(...(rows.length ? [] : ["No builds match this filter ", btn("Clear filter", () => { st.value = ""; bq.value = ""; drawBuilds(); }, "quiet")]));
+    more.replaceChildren(...(builds.length >= limit && limit < 500 ? [btn("Load more", action(bnone, async () => {
+      limit = Math.min(500, limit * 2);
+      builds = await api("GET", `/pipelines/${pid}/builds?limit=${limit}`); // ponytail: refetches the whole list; add offset paging if 500 is not enough
+      drawBuilds();
+    }))] : []));
+  };
+  st.addEventListener("change", drawBuilds);
+  bq.addEventListener("input", drawBuilds);
+  builds = await api("GET", `/pipelines/${pid}/builds`);
+  drawBuilds();
   const buildsSec = sec("Builds", builds.length
-    ? el("div", { class: "wrap" }, el("table", {}, el("thead", {}, el("tr", {}, ...["Build", "Status", "Config", "By", "Created", "Duration"].map((t) => el("th", {}, t)))), bt))
+    ? el("div", {}, el("div", { class: "bar" }, st, bq), el("div", { class: "wrap" }, el("table", {}, el("thead", {}, el("tr", {}, ...["Build", "Status", "Config", "By", "Created", "Duration"].map((t) => el("th", {}, t)))), bt)), bnone, more)
     : el("p", { class: "muted" }, "No builds yet. Run the first build with Build now."));
 
   // Settings

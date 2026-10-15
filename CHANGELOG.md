@@ -1,5 +1,8 @@
 # Changelog
 
+## 2026-10-14 20:14 — Build history filter, search, Load more
+- Pipeline page Builds: Status select plus "Search builds" (matches #number, user, config name, status; combine with the status filter), "No builds match this filter" with Clear filter, and Load more (refetches with limit 100, 200, ... up to 500; hidden when the list is shorter than the limit).
+
 ## 2026-10-14 20:13 — Dashboard trend strip
 - Each dashboard row shows the last 20 builds (oldest left): bar height = duration on a zero baseline, status glyph under each bar, group label like "Last 20 builds: 7 passed, 2 failed". Loaded lazily per row (`GET /api/pipelines/{id}/builds?limit=20`); shows "Trend unavailable" if that fails.
 
