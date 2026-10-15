@@ -201,7 +201,7 @@ Acceptance: demo passes / FORCE_FAIL fails; per-pipeline numbering; stop vs cont
 Tests: test_demo_build_passes_and_fails, test_build_numbers, test_on_fail_stop_vs_continue, test_timeout, test_params_as_env_no_injection, test_snapshot_and_pin, test_log_offset, test_abort_running, test_abort_queued, test_artifacts_and_traversal, test_auto_build_on_upload, test_startup_recovery.
 
 ### Phase 4: UI
-Manual checklist: sign-in persists; dashboard filter narrows rows and Clear filter restores; upload files + zip; run "quick" with live log; FORCE_FAIL fails; abort; download manifest.txt; save config; team-token Settings save shows 403; `<img onerror>` in a log renders as text.
+Manual checklist: sign-in persists; dashboard filter narrows rows and Clear filter restores; upload files + zip; run "quick" with live log; Rebuild on a history row starts an identical build; FORCE_FAIL fails; abort; download manifest.txt; save config; team-token Settings save shows 403; `<img onerror>` in a log renders as text.
 Test: test_index_served.
 
 ## Deliberately skipped (add when needed)

@@ -455,12 +455,23 @@ async function pipelinePage(view, pid) {
   const st = el("select", { "aria-label": "Filter by status" }, el("option", { value: "" }, "All statuses"),
     ...["passed", "failed", "running", "queued", "aborted"].map((v) => el("option", { value: v }, label(v))));
   const bq = el("input", { type: "search", placeholder: "#12, user, config...", "aria-label": "Search builds", autocomplete: "off" });
+  const rebuildCell = (b) => { // same request as the Build page's Rebuild: params, stages and file versions of #N
+    const msg = `Rebuild #${b.number}: reuses params, stages, files@vN as in #${b.number}`, hint = el("span", { class: "hint", id: "rb" + b.id }, msg), err = el("div");
+    const go = el("button", { type: "button", class: "btn quiet", title: msg, "aria-describedby": hint.id, onclick: action(err, async () => {
+      const d = await api("GET", "/builds/" + b.id);
+      try {
+        const nb = await api("POST", `/pipelines/${pid}/builds`, { json: { config_id: null, params: d.params, stages: d.stages.map((x) => x.name), upload_ids: d.files.map((f) => f.upload_id) } });
+        location.hash = "#/b/" + nb.id;
+      } catch (e) { throw new Error(`Can't rebuild #${b.number}. ${e.message}`); }
+    }) }, ico("rebuild"), "Rebuild");
+    return el("td", { class: "ract" }, go, hint, err);
+  };
   const drawBuilds = () => {
     const f = bq.value.trim().toLowerCase();
     const rows = builds.filter((b) => (!st.value || b.status === st.value) &&
       (!f || ["#" + b.number, b.triggered_by, b.config_name || "", b.status].some((t) => t.toLowerCase().includes(f))));
     bt.replaceChildren(...rows.map((b) => el("tr", {}, el("td", { class: "num" }, el("a", { href: "#/b/" + b.id }, "#" + b.number)), el("td", {}, badge(b.status)),
-      el("td", {}, b.config_name || ""), el("td", {}, b.triggered_by), el("td", {}, when(b.created_at)), el("td", { class: "num" }, dur(b.started_at, b.finished_at)))));
+      el("td", {}, b.config_name || ""), el("td", {}, b.triggered_by), el("td", {}, when(b.created_at)), el("td", { class: "num" }, dur(b.started_at, b.finished_at)), rebuildCell(b))));
     bnone.replaceChildren(...(rows.length ? [] : ["No builds match this filter ", btn("Clear filter", () => { st.value = ""; bq.value = ""; drawBuilds(); }, "quiet")]));
     more.replaceChildren(...(builds.length >= limit && limit < 500 ? [btn("Load more", action(bnone, async () => {
       limit = Math.min(500, limit * 2);
@@ -473,7 +484,7 @@ async function pipelinePage(view, pid) {
   builds = await api("GET", `/pipelines/${pid}/builds`);
   drawBuilds();
   const buildsSec = sec("Builds", builds.length
-    ? el("div", {}, el("div", { class: "bar" }, st, bq), el("div", { class: "wrap" }, el("table", {}, el("thead", {}, el("tr", {}, ...["Build", "Status", "Config", "By", "Created", "Duration"].map((t) => el("th", {}, t)))), bt)), bnone, more)
+    ? el("div", {}, el("div", { class: "bar" }, st, bq), el("div", { class: "wrap" }, el("table", {}, el("thead", {}, el("tr", {}, ...["Build", "Status", "Config", "By", "Created", "Duration", "Actions"].map((t) => el("th", {}, t)))), bt)), bnone, more)
     : el("p", { class: "muted" }, "No builds yet. Run the first build with Build now."));
 
   // Settings

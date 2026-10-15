@@ -334,6 +334,9 @@ tbody tr:hover{background:var(--tbl-row-hover)}
 .tb{display:inline-flex;flex-direction:column;align-items:center;gap:2px;width:10px}
 .tb i{display:block;width:100%;background:currentColor;border-radius:1px 1px 0 0}
 .tb .ball{width:10px;height:10px}
+.ract{white-space:nowrap}
+.ract .hint{display:none;font-size:var(--text-xs);color:var(--text-muted);white-space:normal}
+.ract:hover .hint,.ract:focus-within .hint{display:block}
 .hist{background:var(--sunken)}
 :where(input:not([type=checkbox]):not([type=file]),select,textarea){font:inherit;min-height:var(--field-h);padding:0 var(--sp-3);border:var(--rule-w) solid var(--field-bd);border-radius:var(--btn-radius);background:var(--field-bg);color:var(--field-fg);max-width:100%}
 textarea{width:100%;min-height:12rem;padding:var(--sp-3);font:var(--text-sm)/1.4 var(--font-data)}

@@ -1,5 +1,8 @@
 # Changelog
 
+## 2026-10-14 20:15 — Per-row Rebuild
+- Each Builds row has Rebuild: reads the build, then starts a new one with the same params, stages and file versions and opens it (no dialog). The reuse is disclosed on hover/keyboard focus and in the button's description; a 400 is shown in the row.
+
 ## 2026-10-14 20:14 — Build history filter, search, Load more
 - Pipeline page Builds: Status select plus "Search builds" (matches #number, user, config name, status; combine with the status filter), "No builds match this filter" with Clear filter, and Load more (refetches with limit 100, 200, ... up to 500; hidden when the list is shorter than the limit).
 
