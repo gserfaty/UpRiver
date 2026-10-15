@@ -133,13 +133,14 @@ function errBanner(e) { // page-level error with cause and next step
 function confirmDlg({ title, body, safe, danger, busy, run }) {
   let done = false;
   const msg = el("div");
-  const keep = btn(safe, () => d.close());
+  const shut = () => { d.close(); d.remove(); }; // remove here too: some embedded browsers never fire "close"
+  const keep = btn(safe, shut);
   const go = btn(danger, async () => {
     keep.disabled = go.disabled = true;
     go.textContent = busy;
     msg.className = "";
     msg.textContent = "";
-    try { await run(); done = true; d.close(); } catch (e) {
+    try { await run(); done = true; shut(); } catch (e) {
       fail(msg, e);
       keep.disabled = go.disabled = false;
       go.textContent = danger;

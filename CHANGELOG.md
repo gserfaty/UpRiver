@@ -1,5 +1,8 @@
 # Changelog
 
+## 2026-10-14 20:24 — Round 2 review fixes (steps 7–8)
+- Confirm dialogs now remove themselves from the Cancel/confirm handlers instead of relying only on the `close` event (which some embedded browsers never fire), so they cannot linger in the DOM.
+
 ## 2026-10-14 20:24 — Run-panel unsaved-edit tracking
 - The Run panel remembers edits per pipeline in this tab (sessionStorage `upriver.run.{id}`: config choice, params, stages, pins) and restores them when you come back. Edits against the selected saved config (or defaults) show a "Modified" marker, a highlight on each changed field and "Reset to saved"; Build now is relabelled "Build with unsaved changes" (sidebar too). Switching config while modified asks "Switch to config X?" (Keep my edits / Discard edits and switch). Sign out clears the stored run edits and, if any are modified (or Settings has unsaved edits), asks once before discarding them.
 
