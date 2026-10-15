@@ -81,6 +81,25 @@ async function api(method, path, opts = {}) {
   if (opts.blob) return r.blob();
   return r.status === 204 ? null : r.json();
 }
+// Upload via XHR only for upload.onprogress (fetch has none); same auth headers as api(), token never in the URL.
+function xhrUpload(path, form, onprogress) {
+  return new Promise((resolve, reject) => {
+    const x = new XMLHttpRequest();
+    x.open("POST", "/api" + path);
+    x.setRequestHeader("Authorization", "Bearer " + auth.token);
+    x.setRequestHeader("X-UpRiver-User", auth.user);
+    x.upload.onprogress = (e) => e.lengthComputable && onprogress(e.loaded / e.total);
+    x.onerror = () => reject(new Error("Can't reach the server. Check your connection and that the server is running, then retry."));
+    x.onload = () => {
+      let d = null;
+      try { d = JSON.parse(x.responseText); } catch (e) { /* not json */ }
+      if (x.status >= 200 && x.status < 300) return resolve(d);
+      const det = d && d.detail;
+      reject(new Error(x.status + " " + (typeof det === "string" ? det : det ? JSON.stringify(det) : x.statusText)));
+    };
+    x.send(form);
+  });
+}
 function saveBlob(blob, filename) { // blob -> object URL -> click; no token ever appears in a URL
   const url = URL.createObjectURL(blob);
   const a = el("a", { href: url, download: filename });
@@ -369,20 +388,50 @@ async function pipelinePage(view, pid) {
       "v" + u.version + (u.sha256 ? " " + fmtSize(u.size) : " removed"), " by " + u.uploader + ", " + when(u.created_at),
       u.sha256 ? btn("Download", action(filesErr, () => download(`/uploads/${u.id}/download`, path.split("/").pop()))) : null)));
   }
+  const MAX_MB = 200; // ponytail: mirrors the UPRIVER_MAX_UPLOAD_MB default; the server doesn't expose it, so a raised cap still gets blocked here (add it to an API if that bites). Server stays authoritative.
   const fileIn = el("input", { type: "file", multiple: true, "aria-label": "files to upload" });
   const extract = el("input", { type: "checkbox" });
-  const filesSec = sec("Files", filesBox,
-    el("div", { class: "bar" }, fileIn, el("label", {}, extract, "Extract zip files"),
-      btn("Upload", action(filesErr, async () => {
-        if (!fileIn.files.length) throw new Error("Choose files first.");
+  const dropMsg = el("span", {}, "Drop files here or choose files");
+  const drop = el("div", { class: "drop" }, dropMsg, fileIn);
+  const results = el("div"), prog = el("progress", { max: 1, value: 0, hidden: true, "aria-label": "Upload progress" }), busy = el("span", { class: "muted", role: "status" });
+  const showList = (rows) => results.replaceChildren(el("div", { class: "wrap" }, el("table", {},
+    el("thead", {}, el("tr", {}, ...["File", "Version", "Result"].map((t) => el("th", {}, t)))),
+    el("tbody", {}, ...rows.map((r) => el("tr", {}, el("td", { class: "data" }, r[0]), el("td", { class: "num" }, r[1]), el("td", {}, r[2])))))),
+    el("div", { class: "bar" }, btn("Dismiss", () => results.replaceChildren(), "quiet")));
+  const sel = () => showList([...fileIn.files].map((f) => [f.name + " (" + fmtSize(f.size) + ")", "", "Ready"]));
+  fileIn.addEventListener("change", () => { sel(); dropMsg.textContent = "Drop files here or choose files"; });
+  for (const t of ["dragenter", "dragover"]) drop.addEventListener(t, (e) => { e.preventDefault(); drop.classList.add("over"); const n = e.dataTransfer.items ? e.dataTransfer.items.length : 0; dropMsg.textContent = `Release to add ${n} file${n === 1 ? "" : "s"}`; });
+  drop.addEventListener("dragleave", () => { drop.classList.remove("over"); dropMsg.textContent = "Drop files here or choose files"; });
+  drop.addEventListener("drop", (e) => { e.preventDefault(); drop.classList.remove("over"); fileIn.files = e.dataTransfer.files; fileIn.dispatchEvent(new Event("change")); });
+  const filesSec = sec("Files", filesBox, drop,
+    el("div", { class: "bar" }, el("label", {}, extract, "Extract zip files"),
+      btn("Upload", action(filesErr, async (b) => {
+        const fl = [...fileIn.files];
+        if (!fl.length) throw new Error("Choose files first.");
+        const seen = new Set();
+        for (const f of fl) { // client pre-validation; nothing is sent if any file fails
+          if (!f.name) throw new Error("A file has no name. Rename it and choose it again.");
+          if (seen.has(f.name)) throw new Error(`Two files are named ${f.name}. Rename one; names must be unique in a batch.`);
+          seen.add(f.name);
+          if (f.size > MAX_MB * 1048576) throw new Error(`${f.name} is ${fmtSize(f.size)}, over the ${MAX_MB} MB limit. Nothing was uploaded.`);
+        }
         const form = new FormData();
-        for (const f of fileIn.files) form.append("files", f, f.name);
+        for (const f of fl) form.append("files", f, f.name);
         form.append("extract", extract.checked ? "true" : "false");
-        const out = await api("POST", `/pipelines/${pid}/uploads`, { form });
-        fileIn.value = "";
-        await loadFiles();
-        note(filesErr, `${out.filter((o) => !o.unchanged).length} stored, ${out.filter((o) => o.unchanged).length} unchanged`);
-      }), "primary", "upload")), filesErr);
+        busy.textContent = "Upload in progress";
+        prog.hidden = false; prog.value = 0;
+        try {
+          // ponytail: all-or-nothing upload, no per-item server result; add per-item results in the API if per-file errors are needed.
+          const out = await xhrUpload(`/pipelines/${pid}/uploads`, form, (v) => { prog.value = v; });
+          fileIn.value = "";
+          showList(out.map((o) => [o.path, "v" + o.version, o.unchanged ? "unchanged" : "stored"]));
+          await loadFiles();
+          note(filesErr, `${out.filter((o) => !o.unchanged).length} stored, ${out.filter((o) => o.unchanged).length} unchanged`);
+        } catch (e) {
+          showList(fl.map((f) => [f.name, "", "not stored"]));
+          throw e;
+        } finally { busy.textContent = ""; prog.hidden = true; }
+      }), "primary", "upload"), prog, busy), filesErr, results);
 
   // Run
   const runErr = el("div"), pinInfo = el("span", { class: "muted" });

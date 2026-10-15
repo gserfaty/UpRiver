@@ -1,5 +1,8 @@
 # Changelog
 
+## 2026-10-14 20:17 — Upload dropzone, progress, result list
+- Files: dashed dropzone around the file input (drag over shows "Release to add N files"), overall progress bar (XHR with the same Authorization and X-UpRiver-User headers as the API; token never in a URL), client checks before sending (empty name, duplicate names, file over 200 MB), and a result list per path (version, stored/unchanged; zip members listed) kept until Dismiss. Uploads are all-or-nothing: on 400/413 the server's message is shown and every row reads "not stored".
+
 ## 2026-10-14 20:15 — Round 2 review fixes (steps 1–4)
 - Builds: Load more no longer vanishes after a failed fetch (the limit is committed only on success) and ignores a second click while a fetch is in flight; Rebuild ignores a second click while one is in flight (filter re-renders create fresh buttons).
 
